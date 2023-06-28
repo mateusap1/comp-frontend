@@ -7,7 +7,6 @@ function App() {
   return (
     <WalletProvider networkMode="testnet">
       <>
-        <h1>Hello, World</h1>
         <Connector whitelistedWallets={["nami", "eternl"]} />
       </>
     </WalletProvider>

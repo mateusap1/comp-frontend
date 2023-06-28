@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 
 import { WalletSelector } from "./WalletSelector";
 import { Modal } from "./Modal";
+import { Button } from "./Button"
 import { useWallet } from "../contexts/WalletProvider";
 
 type ConnectorProps = {
@@ -36,12 +37,12 @@ export function Connector({ whitelistedWallets }: ConnectorProps) {
 
   return (
     <div className="user-menu-button">
-      <button
+      <Button
         onClick={() => setWalletSelectorShow(true)}
         className="user-menu-button-text"
       >
         {statusDisplay}
-      </button>
+      </Button>
 
       <WalletSelector
         show={walletSelectorShow}
