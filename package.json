@@ -1,5 +1,5 @@
 {
-  "name": "cardano-web3-typescript-template",
+  "name": "vote-dapp",
   "version": "0.1.0",
   "private": true,
   "dependencies": {
