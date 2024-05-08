@@ -30,7 +30,8 @@ const Home = () => {
     buyRoleNft,
     getUserNfts,
     getAllNfts,
-    listNft
+    listNft,
+    voteNft
   } = useWallet()!;
 
   useEffect(() => {
@@ -90,15 +91,17 @@ const Home = () => {
                 <span>{role}</span>
               </div>
               <div className="flex flex-row gap-2">
-                <span>isListed:</span>
-                <span>{isListed}</span>
+                <span>{isListed ? "LISTED" : "NOT LISTED"}</span>
               </div>
               <div className="flex flex-row gap-2">
                 <span>votes:</span>
-                <span>{votes}</span>
+                <span>{votes.length}</span>
               </div>
-              {userNfts.includes(assetName) && !isListed && (
+              {userNfts.map(nft => nft.slice(56)).includes(assetName) && !isListed && role == "User" && (
                 <button onClick={() => listNft(assetName)} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">List NFT</button>
+              )}
+              {!userNfts.map(nft => nft.slice(56)).includes(assetName) && isListed && (
+                <button onClick={() => voteNft(userNfts, assetName)} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Vote</button>
               )}
             </div>
           ))}

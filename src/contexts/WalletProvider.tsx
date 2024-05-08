@@ -19,7 +19,8 @@ export type WalletContext = {
   buyRoleNft: (role: NftRole) => Promise<void>,
   getUserNfts: () => Promise<string[]>,
   getAllNfts: () => Promise<NftInfo[]>,
-  listNft: (assetName: string) => Promise<void>
+  listNft: (assetName: string) => Promise<void>,
+  voteNft: (ownerNfts: string[], assetName: string) => Promise<void>
 };
 
 export interface FullWallet extends WalletApi {
@@ -41,7 +42,7 @@ export type NftInfo = {
   assetName: string,
   role: NftRole,
   isListed: boolean,
-  votes: number,
+  votes: string[],
 }
 
 export type ScriptInfo = {
@@ -249,7 +250,7 @@ export const WalletProvider = ({
       assetName: datum.asset_name,
       role: rolesMap[roleIndex],
       isListed: datum.isListed,
-      votes: datum.votes.length
+      votes: datum.votes
     } as NftInfo
 
     return nftInfo
@@ -276,7 +277,7 @@ export const WalletProvider = ({
     for (const utxo of utxos) {
       for (const asset in utxo.assets) {
         if (asset.slice(0, 56) == scriptInfo.policyId) {
-          assets.push(asset.slice(56))
+          assets.push(asset)
         }
       }
     }
@@ -461,6 +462,113 @@ export const WalletProvider = ({
     }
   };
 
+  const voteNft = async (ownerNfts: string[], assetName: string) => {
+    if (!lucid) {
+      return Promise.reject("Lucid not loaded yet.");
+    }
+
+    if (!scriptInfo) {
+      return Promise.reject("Script Info has not been loaded yet!")
+    }
+
+    const wallet = await getCurrentWallet()
+    if (!wallet) {
+      return Promise.reject("Wallet has not been loaded yet!")
+    }
+
+    lucid.selectWallet(wallet)
+
+    try {
+      const utxos = await lucid.wallet.getUtxos()!;
+
+      const address = await lucid?.wallet.address()!
+      const owner = lucid?.utils.paymentCredentialOf(address).hash!;
+
+      const scriptUtxos = await lucid!.utxosAt(scriptInfo.address);
+
+      let proofAssetInfo = null;
+      let voteAssetInfo = null;
+
+      let proofScriptUTxO = null;
+      let scriptUTxO = null;
+      for (const utxo of scriptUtxos) {
+        const assetInfo = getAssetInfoFromUTxO(utxo)
+        if (assetInfo.assetName == assetName && !scriptUTxO) {
+          voteAssetInfo = assetInfo
+          scriptUTxO = utxo;
+        }
+
+        if (ownerNfts.includes(`${scriptInfo.policyId}${assetInfo.assetName}`)) {
+          if (assetInfo.role == "Vote") {
+            proofAssetInfo = assetInfo
+            proofScriptUTxO = utxo
+          }
+        }
+      }
+
+      if (!scriptUTxO) {
+        return Promise.reject("Script UTxO not found")
+      }
+
+      if (!proofScriptUTxO) {
+        return Promise.reject("User does not have vote NFT")
+      }
+
+      const proofAsset = `${scriptInfo.policyId}${proofAssetInfo!.assetName}`;
+
+      let referenceUtxo;
+      for (const utxo of utxos) {
+        for (const curAsset in utxo.assets) {
+          if (curAsset == proofAsset) {
+            referenceUtxo = utxo
+            break;
+          }
+        }
+      }
+
+      if (!referenceUtxo) {
+        console.log(proofAsset)
+        return Promise.reject("Reference UTxO not found")
+      }
+
+      const redeemer = Data.to(new Constr(1, [new Constr(0, [owner, new Constr(1, [proofAssetInfo!.assetName])])]));
+      
+      const trueData = new Constr(1, [])
+      const datum = Data.to(
+        new Constr(0, [
+          voteAssetInfo!.assetName,
+          new Constr(getDatumIdByRole(voteAssetInfo!.role), []),
+          trueData,
+          [proofAssetInfo!.assetName, ...voteAssetInfo!.votes]
+        ])
+      )
+
+      console.log(3)
+
+      const tx = await lucid
+        .newTx()
+        .collectFrom([scriptUTxO], redeemer)
+        .attachSpendingValidator(scriptInfo.spendScript)
+        .readFrom([referenceUtxo, proofScriptUTxO])
+        .addSigner(address)
+        .payToContract(
+          scriptInfo.address,
+          { inline: datum },
+          scriptUTxO.assets,
+        )
+        .complete();
+
+      const txSigned = await tx.sign().complete();
+
+      const txHash = await txSigned.submit();
+
+      console.log(`Successfully submitted transaction ${txHash}`)
+
+    } catch (error) {
+      console.log(error)
+    }
+  };
+
   return (
     <Wallet.Provider
       value={{
@@ -474,7 +582,8 @@ export const WalletProvider = ({
         buyRoleNft,
         getUserNfts,
         getAllNfts,
-        listNft
+        listNft,
+        voteNft
       }}
     >
       {children}
