@@ -9,18 +9,16 @@ export const Navbar = () => {
           <div className="flex-shrink-0">
             <a href="/" className="text-white font-bold text-lg">NFT Demo</a>
           </div>
-          <div className="hidden md:block">
-            <ul className="flex space-x-4">
-              <Connector whitelistedWallets={["nami", "eternl"]} />
-            </ul>
+          <div className="flex">
+          <ul className="flex items-center space-x-4">
+              <li><a href="/" className="text-white text-2xl hover:text-gray-300">Home</a></li>
+              <li><a href="/nfts" className="text-white text-2xl hover:text-gray-300">View NFTs</a></li>
+              </ul>
           </div>
-          <div className="md:hidden">
-            {/* Mobile menu button */}
-            <button className="text-white focus:outline-none">
-              <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16m-7 6h7" />
-              </svg>
-            </button>
+          <div className="hidden md:block">
+            <div className="flex items-center space-x-4">
+              <Connector whitelistedWallets={["nami", "eternl"]} />
+            </div>
           </div>
         </div>
       </div>

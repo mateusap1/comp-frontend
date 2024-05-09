@@ -21,19 +21,11 @@ const RoleMinter = ({ role, getPriceByRole, buyRoleNft }: RoleMinterProps) => {
 }
 
 const Home = () => {
-  const [nfts, setNfts] = useState<NftInfo[] | null>(null);
-  const [userNfts, setUserNfts] = useState<string[] | null>(null)
-
   const {
     currentWallet,
     loadScriptInfo,
-    scriptInfo,
     getPriceByRole,
-    buyRoleNft,
-    getUserNfts,
-    getAllNfts,
-    listNft,
-    voteNft
+    buyRoleNft
   } = useWallet()!;
 
   useEffect(() => {
@@ -41,23 +33,6 @@ const Home = () => {
       loadScriptInfo()
     }
   }, [currentWallet])
-
-  useEffect(() => {
-    if (scriptInfo) {
-      loadUserNfts()
-      loadAllNfts()
-    }
-  }, [scriptInfo])
-
-  const loadUserNfts = async () => {
-    const userNfts = await getUserNfts();
-    setUserNfts(userNfts)
-  }
-
-  const loadAllNfts = async () => {
-    const nfts = await getAllNfts();
-    setNfts(nfts)
-  }
 
   const handleUploadMetadata = async (blob: Blob) => {
 
@@ -75,37 +50,6 @@ const Home = () => {
             {(["Admin", "Moderator", "Vote", "User"].map((role) => (
               <RoleMinter role={role as NftRole} getPriceByRole={getPriceByRole} buyRoleNft={buyRoleNft} />
             )))}
-          </div>
-        </div>
-        <hr />
-        <div>
-          <h1>All Minted NFTs</h1>
-          <div className="flex flex-row gap-4">
-            {(nfts !== null) && (userNfts !== null) && nfts.map(({ assetName, role, isListed, votes }) => (
-              <div className="p-4 flex flex-col bg-slate-100">
-                <div className="flex flex-row gap-2">
-                  <span>AssetName:</span>
-                  <span>{assetName}</span>
-                </div>
-                <div className="flex flex-row gap-2">
-                  <span>Role:</span>
-                  <span>{role}</span>
-                </div>
-                <div className="flex flex-row gap-2">
-                  <span>{isListed ? "LISTED" : "NOT LISTED"}</span>
-                </div>
-                <div className="flex flex-row gap-2">
-                  <span>votes:</span>
-                  <span>{votes.length}</span>
-                </div>
-                {userNfts.map(nft => nft.slice(56)).includes(assetName) && !isListed && role == "User" && (
-                  <button onClick={() => listNft(assetName)} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">List NFT</button>
-                )}
-                {!userNfts.map(nft => nft.slice(56)).includes(assetName) && isListed && (
-                  <button onClick={() => voteNft(userNfts, assetName)} className="bg-blue-500 hover:bg-blue-700 text-white font-bold py-2 px-4 rounded">Vote</button>
-                )}
-              </div>
-            ))}
           </div>
         </div>
       </div>

@@ -1,14 +1,21 @@
 import React, { useEffect } from "react";
 
-import { Connector } from "./components/Connector";
+import { Routes, Route, BrowserRouter } from "react-router-dom";
+
 import { WalletProvider } from "./contexts/WalletProvider";
 
 import Home from "./pages/Home";
+import NFTs from "./pages/NFTs";
 
 function App() {
   return (
     <WalletProvider networkMode="testnet">
-      <Home />
+      <BrowserRouter>
+        <Routes>
+          <Route path="/" element={<Home />} />
+          <Route path="/nfts" element={<NFTs />} />
+        </Routes>
+      </BrowserRouter>
     </WalletProvider>
   );
 }
