@@ -17,7 +17,7 @@ export function Connector({ whitelistedWallets }: ConnectorProps) {
   const [walletError, setWalletError] = useState<string | null>(null);
   const [walletSelectorShow, setWalletSelectorShow] = useState(false);
 
-  const { walletLoaded, currentWallet, getWallets, connect } = useWallet()!;
+  const { walletLoaded, currentWallet, connect } = useWallet()!;
 
   useEffect(() => {
     if (currentWallet === null) {
@@ -32,7 +32,7 @@ export function Connector({ whitelistedWallets }: ConnectorProps) {
     // After this statement we can assume currentWallet, getWallets
     // will never be null
 
-    return <></>;
+    return <Button className="disabled user-menu-button-text">Loading</Button>
   }
 
   return (
