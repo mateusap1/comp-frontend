@@ -1,38 +1,42 @@
-import * as React from "react";
+import React, { useState } from "react";
+import { toast } from "react-toastify";
 
 type ImageUploaderProps = {
-  handleUploadMetadata: (blob: Blob) => Promise<void>;
+  handleUploadMetadata: (blob: Blob) => Promise<string>;
 };
 
 export default function ImageUploader({
   handleUploadMetadata
 }: ImageUploaderProps) {
-  const [blob, setBlob] = React.useState<Blob | null>(null);
-  const [isPreviewed, setIsPreviewed] = React.useState(false);
-  const [imagePreview, setImagePreview] = React.useState(<></>);
+  const [blob, setBlob] = useState<Blob | null>(null);
+  const [fileName, setFileName] = useState<string | null>(null);
+  const [fileType, setFileType] = useState<string | null>(null);
 
-  let filename,
-    imagePreviewCLass =
+  const [isPreviewed, setIsPreviewed] = useState(false);
+  const [imagePreview, setImagePreview] = useState(<></>);
+
+  let imagePreviewCLass =
       "max-w-sm p-6 mb-4 bg-gray-100 border-dashed border-2 border-gray-400 rounded-lg items-center mx-auto text-center cursor-pointer";
 
   const handleChange = (files: FileList | null) => {
     if (!files) {
-      console.log("No files uploaded");
+      toast.error("No files uploaded");
       return;
     }
 
     const file = files[0];
 
     if (file) {
-      filename = file.name;
-
       const reader = new FileReader();
       reader.onload = (e) => {
         const img = e.target?.result;
         const blob = new Blob(
           e.target ? ([e.target?.result] as BlobPart[]) : undefined
         );
+
         setBlob(blob);
+        setFileName(file.name);
+        setFileType(file.type);
 
         setImagePreview(
           <img
@@ -45,10 +49,14 @@ export default function ImageUploader({
         imagePreviewCLass =
           "max-w-sm p-6 mb-4 bg-gray-100 rounded-lg items-center mx-auto text-center cursor-pointer";
       };
+
       reader.readAsDataURL(file);
       setIsPreviewed(!isPreviewed);
     } else {
-      filename = "";
+      setBlob(null);
+      setFileName(null);
+      setFileType(null);
+
       setImagePreview(
         <div className="bg-gray-200 h-48 rounded-lg flex items-center justify-center text-gray-500">
           No image preview
@@ -61,13 +69,14 @@ export default function ImageUploader({
     }
   };
 
-  const handleUpload = () => {
-    if (!blob) {
-      console.log("No Blob");
+  const handleUpload = async () => {
+    if (!blob || !fileName || !fileType) {
+      console.error("No image selected yet.");
       return;
     }
 
-    handleUploadMetadata(blob);
+    const result = await handleUploadMetadata(blob);
+    console.log(result)
   };
 
   return (
@@ -110,7 +119,7 @@ export default function ImageUploader({
                 <b className="text-gray-600">JPG, PNG, or GIF</b> format.
               </p>
               <span id="filename" className="text-gray-500 bg-gray-200 z-50">
-                {filename}
+                {fileName}
               </span>
             </label>
             {imagePreview}
