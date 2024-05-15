@@ -35,7 +35,7 @@ export type WalletContext = {
   getAllNfts: () => Promise<NftInfo[]>;
   listNft: (assetName: string) => Promise<void>;
   voteNft: (ownerNfts: string[], assetName: string) => Promise<void>;
-  approveNft: (ownerNfts: string[], assetName: string) => Promise<void>;
+  reviewNft: (ownerNfts: string[], assetName: string, approve: boolean) => Promise<void>;
 };
 
 export interface FullWallet extends WalletApi {
@@ -58,6 +58,7 @@ export type NftInfo = {
   role: NftRole;
   isListed: boolean;
   isApproved: boolean;
+  isRejected: boolean;
   votes: string[];
 };
 
@@ -243,6 +244,7 @@ export const WalletProvider = ({
       role: Data.Any(),
       isListed: Data.Boolean(),
       isApproved: Data.Boolean(),
+      isRejected: Data.Boolean(),
       votes: Data.Array(Data.Bytes()),
     });
 
@@ -257,6 +259,7 @@ export const WalletProvider = ({
       role: rolesMap[roleIndex],
       isListed: datum.isListed,
       isApproved: datum.isApproved,
+      isRejected: datum.isRejected,
       votes: datum.votes,
     } as NftInfo;
 
@@ -424,7 +427,7 @@ export const WalletProvider = ({
       for (const assetData of assetsData) {
         const roleData = new Constr(getDatumIdByRole(assetData.role), []);
         const datum = Data.to(
-          new Constr(0, [assetData.assetName, roleData, falseData, falseData, []])
+          new Constr(0, [assetData.assetName, roleData, falseData, falseData, falseData, []])
         );
 
         tx = tx.payToContract(
@@ -517,6 +520,7 @@ export const WalletProvider = ({
           assetInfo.assetName,
           new Constr(getDatumIdByRole(assetInfo.role), []),
           trueData,
+          falseData,
           falseData,
           [],
         ])
@@ -619,12 +623,15 @@ export const WalletProvider = ({
       );
 
       const trueData = new Constr(1, []);
+      const falseData = new Constr(0, []);
+
       const datum = Data.to(
         new Constr(0, [
           voteAssetInfo!.assetName,
           new Constr(getDatumIdByRole(voteAssetInfo!.role), []),
           trueData,
           trueData,
+          falseData,
           [proofAssetInfo!.assetName, ...voteAssetInfo!.votes],
         ])
       );
@@ -648,7 +655,7 @@ export const WalletProvider = ({
     }
   };
 
-  const approveNft = async (ownerNfts: string[], assetName: string) => {
+  const reviewNft = async (ownerNfts: string[], assetName: string, approve: boolean) => {
     if (!lucid) {
       return Promise.reject("Lucid not loaded yet.");
     }
@@ -719,19 +726,22 @@ export const WalletProvider = ({
         return Promise.reject("Reference UTxO not found");
       }
 
+      const trueData = new Constr(1, []);
+      const falseData = new Constr(0, []);
+
       const redeemer = Data.to(
         new Constr(1, [
-          new Constr(0, [owner, new Constr(2, [proofAssetInfo!.assetName])]),
+          new Constr(0, [owner, new Constr(2, [proofAssetInfo!.assetName, approve ? trueData : falseData])]),
         ])
       );
 
-      const trueData = new Constr(1, []);
       const datum = Data.to(
         new Constr(0, [
           voteAssetInfo!.assetName,
           new Constr(getDatumIdByRole(voteAssetInfo!.role), []),
           trueData,
-          trueData,
+          approve ? trueData : falseData,
+          approve ? falseData : trueData,
           voteAssetInfo!.votes,
         ])
       );
@@ -770,7 +780,7 @@ export const WalletProvider = ({
         getAllNfts,
         listNft,
         voteNft,
-        approveNft,
+        reviewNft,
       }}
     >
       {children}
