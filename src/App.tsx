@@ -5,7 +5,7 @@ import { Routes, Route, BrowserRouter } from "react-router-dom";
 import { WalletProvider } from "./contexts/WalletProvider";
 
 import Home from "./pages/Home";
-import NFTs from "./pages/NFTs";
+import NFTs from "./pages/Nfts";
 
 function App() {
   return (

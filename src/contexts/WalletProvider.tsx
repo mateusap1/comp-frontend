@@ -351,7 +351,8 @@ export const WalletProvider = ({
         new Constr(0, [utxo.txHash]),
         BigInt(utxo.outputIndex),
       ]);
-      const redeemer = Data.to(new Constr(0, [roleData, outRefData]));
+      const mints = [new Constr(0, [roleData, outRefData, assetName])]
+      const redeemer = Data.to(new Constr(0, [mints, [BigInt(-1), BigInt(1000)]]))
 
       const falseData = new Constr(0, []);
       const datum = Data.to(
