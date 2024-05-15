@@ -15,8 +15,6 @@ import {
   UTxO,
 } from "lucid-cardano";
 
-import axios from "axios";
-
 import { Blueprint } from "../types/blueprint.ts";
 import blueprint from "../assets/plutus.json";
 import { toast } from "react-toastify";
@@ -75,8 +73,8 @@ export const WalletProvider = ({
   const [currentFullWallet, setCurrentFullWallet] = useState<FullWallet | null>(
     null
   );
-  const [lucid, setLucid] = useState<Lucid | null>(null);
 
+  const [lucid, setLucid] = useState<Lucid | null>(null);
   const [wallets, setWallets] = useState<Cardano | null>(null);
   const [walletLoaded, setWalletLoaded] = useState<boolean>(false);
 
@@ -107,9 +105,6 @@ export const WalletProvider = ({
       ),
       networkMode === "testnet" ? "Preprod" : "Mainnet"
     );
-
-    console.log("Everything good");
-    console.log(newLucid);
 
     setLucid(newLucid);
   };
@@ -320,13 +315,13 @@ export const WalletProvider = ({
   const splitStringIntoChunks = (input: string): string[] => {
     const chunkSize = 64;
     const chunks: string[] = [];
-  
+
     for (let i = 0; i < input.length; i += chunkSize) {
       chunks.push(input.slice(i, i + chunkSize));
     }
-  
+
     return chunks;
-  }
+  };
 
   const buyRoleNft = async (role: NftRole, nftName: string) => {
     if (!lucid) {
@@ -370,8 +365,12 @@ export const WalletProvider = ({
         .attachMetadata(721, {
           [scriptInfo.policyId]: {
             [assetName]: {
-              name: nftName.length > 64 ? splitStringIntoChunks(nftName) : nftName,
-              image: ["https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45", "a1-b278-29b31a3abab6"]
+              name:
+                nftName.length > 64 ? splitStringIntoChunks(nftName) : nftName,
+              image: [
+                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
+                "a1-b278-29b31a3abab6",
+              ],
             },
           },
         })
