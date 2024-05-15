@@ -13,6 +13,7 @@ import {
   SpendingValidator,
   fromText,
   UTxO,
+  Assets
 } from "lucid-cardano";
 
 import { Blueprint } from "../types/blueprint.ts";
@@ -29,7 +30,7 @@ export type WalletContext = {
   loadScriptInfo: () => Promise<void>;
   scriptInfo: ScriptInfo | null;
   getPriceByRole: (role: NftRole) => number;
-  buyRoleNft: (role: NftRole, nftName: string) => Promise<void>;
+  buyRolesNft: (roles: NftRole[], nftName: string) => Promise<void>;
   getUserNfts: () => Promise<string[]>;
   getAllNfts: () => Promise<NftInfo[]>;
   listNft: (assetName: string) => Promise<void>;
@@ -323,7 +324,7 @@ export const WalletProvider = ({
     return chunks;
   };
 
-  const buyRoleNft = async (role: NftRole, nftName: string) => {
+  const buyRolesNft = async (roles: NftRole[], nftName: string) => {
     if (!lucid) {
       return Promise.reject("Lucid not loaded yet.");
     }
@@ -341,49 +342,95 @@ export const WalletProvider = ({
 
     try {
       const utxos = await lucid.wallet.getUtxos()!;
-      const utxo = utxos[0];
+      if (utxos.length < roles.length) {
+        toast.error(
+          `User does not have enough UTxOs, must have at least ${roles.length}`
+        );
+        return;
+      }
+      const assetsUTxOs = utxos.slice(0, roles.length);
 
-      const assetName = getAssetNameFromOutRef(utxo.txHash, utxo.outputIndex);
-      const asset = `${scriptInfo.policyId}${assetName}`;
+      type AssetData = {
+        assetName: string;
+        asset: string;
+        role: NftRole;
+        utxo: UTxO;
+      };
 
-      const roleData = new Constr(getDatumIdByRole(role), []);
-      const outRefData = new Constr(0, [
-        new Constr(0, [utxo.txHash]),
-        BigInt(utxo.outputIndex),
-      ]);
-      const mints = [new Constr(0, [roleData, outRefData, assetName])]
-      const redeemer = Data.to(new Constr(0, [mints, [BigInt(-1), BigInt(1000)]]))
+      let assetsData: AssetData[] = [];
+      for (let i = 0; i < roles.length; i++) {
+        const utxo = assetsUTxOs[i];
+        const role = roles[i];
+        const assetName = getAssetNameFromOutRef(utxo.txHash, utxo.outputIndex);
+        assetsData.push({
+          assetName: assetName,
+          asset: `${scriptInfo.policyId}${assetName}`,
+          role: role,
+          utxo: utxo,
+        });
+      }
 
-      const falseData = new Constr(0, []);
-      const datum = Data.to(
-        new Constr(0, [assetName, roleData, falseData, []])
+      // const assetName = getAssetNameFromOutRef(utxo.txHash, utxo.outputIndex);
+      // const asset = `${scriptInfo.policyId}${assetName}`;
+
+      let mints = [];
+      for (const assetData of assetsData) {
+        const roleData = new Constr(getDatumIdByRole(assetData.role), []);
+        const outRefData = new Constr(0, [
+          new Constr(0, [assetData.utxo.txHash]),
+          BigInt(assetData.utxo.outputIndex),
+        ]);
+        mints.push(new Constr(0, [roleData, outRefData, assetData.assetName]))
+      }
+
+      const redeemer = Data.to(
+        new Constr(0, [mints, [BigInt(-1), BigInt(1000)]])
       );
 
-      const tx = await lucid
-        .newTx()
-        .collectFrom([utxo])
-        .attachMintingPolicy(scriptInfo.mintScript)
-        .attachMetadata(721, {
-          [scriptInfo.policyId]: {
-            [assetName]: {
-              name:
+      const falseData = new Constr(0, []);
+
+      let mintAssets: Assets = {}
+      for (const assetData of assetsData) {
+        mintAssets[assetData.asset] = BigInt(1);
+      }
+
+      let metadata: Record<string, any> = {}
+      for (const assetData of assetsData) {
+        metadata[assetData.assetName] = {
+          name:
                 nftName.length > 64 ? splitStringIntoChunks(nftName) : nftName,
               image: [
                 "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
                 "a1-b278-29b31a3abab6",
               ],
-            },
-          },
+        }
+      }
+
+      let tx = lucid
+        .newTx()
+        .collectFrom(assetsUTxOs)
+        .attachMintingPolicy(scriptInfo.mintScript)
+        .attachMetadata(721, {
+          [scriptInfo.policyId]: metadata,
         })
-        .mintAssets({ [asset]: BigInt(1) }, redeemer)
-        .payToContract(
+        .mintAssets(mintAssets, redeemer)
+
+      for (const assetData of assetsData) {
+        const roleData = new Constr(getDatumIdByRole(assetData.role), []);
+        const datum = Data.to(
+          new Constr(0, [assetData.assetName, roleData, falseData, []])
+        )
+
+        tx = tx.payToContract(
           scriptInfo.address,
           { inline: datum },
-          { lovelace: BigInt(getPriceByRole(role)) }
+          { lovelace: BigInt(getPriceByRole(assetData.role)) }
         )
-        .complete();
+      }
+      
+      const result = await tx.complete();
 
-      const txSigned = await tx.sign().complete();
+      const txSigned = await result.sign().complete();
 
       const txHash = await txSigned.submit();
 
@@ -602,7 +649,7 @@ export const WalletProvider = ({
         loadScriptInfo,
         scriptInfo,
         getPriceByRole,
-        buyRoleNft,
+        buyRolesNft,
         getUserNfts,
         getAllNfts,
         listNft,

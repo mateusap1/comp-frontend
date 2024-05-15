@@ -7,27 +7,39 @@ import { Navbar } from "../components/Navbar";
 
 type RoleMinterProps = {
   role: NftRole;
+  isSelected: boolean;
   getPriceByRole: (role: NftRole) => number;
-  buyRoleNft: (role: NftRole) => Promise<void>;
+  onSelect: (role: NftRole) => void;
 };
 
-const RoleMinter = ({ role, getPriceByRole, buyRoleNft }: RoleMinterProps) => {
+const RoleMinter = ({
+  role,
+  isSelected,
+  getPriceByRole,
+  onSelect,
+}: RoleMinterProps) => {
   return (
     <div className="flex flex-col gap-2 bg-black p-4 rounded-lg">
-      <Button onClick={() => buyRoleNft(role)} className="w-32">
+      <Button onClick={() => onSelect(role)} className="w-32">
         {role}
       </Button>
       <span className="text-center text-2xl font-bold text-white">
         {getPriceByRole(role) / 1_000_000} ADA
       </span>
+      {isSelected && (
+        <span className="text-center text-lg font-bold text-white">
+          SELECTED
+        </span>
+      )}
     </div>
   );
 };
 
 const Home = () => {
   const [nftName, setNftName] = useState<string>("");
+  const [selectedRoles, setSelectedRoles] = useState<Array<NftRole>>([]);
 
-  const { currentWallet, loadScriptInfo, getPriceByRole, buyRoleNft } =
+  const { currentWallet, loadScriptInfo, getPriceByRole, buyRolesNft } =
     useWallet()!;
 
   useEffect(() => {
@@ -58,10 +70,22 @@ const Home = () => {
             {["Admin", "Moderator", "Vote", "User"].map((role) => (
               <RoleMinter
                 role={role as NftRole}
+                isSelected={selectedRoles.includes(role as NftRole)}
                 getPriceByRole={getPriceByRole}
-                buyRoleNft={(role: NftRole) => buyRoleNft(role, nftName)}
+                onSelect={(role: NftRole) => {
+                  if (selectedRoles.includes(role)) {
+                    setSelectedRoles(selectedRoles.filter((r) => r != role))
+                  } else {
+                    setSelectedRoles([...selectedRoles, role])
+                  }
+                }}
               />
             ))}
+          </div>
+          <div className="w-full flex items-center justify-center">
+            <Button onClick={() => buyRolesNft(selectedRoles, nftName)} className="w-64 py-4 rounded-lg bg-slate-800 text-white">
+              Mint
+            </Button>
           </div>
         </div>
       </div>
