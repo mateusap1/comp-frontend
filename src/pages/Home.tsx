@@ -83,9 +83,9 @@ const Home = () => {
             ))}
           </div>
           <div className="w-full flex items-center justify-center">
-            <Button onClick={() => buyRolesNft(selectedRoles, nftName)} className="w-64 py-4 rounded-lg bg-slate-800 text-white">
+            <button className="w-64 py-4 hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white" onClick={() => buyRolesNft(selectedRoles, nftName)}>
               Mint
-            </Button>
+            </button>
           </div>
         </div>
       </div>

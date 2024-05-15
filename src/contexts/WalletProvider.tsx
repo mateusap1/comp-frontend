@@ -13,7 +13,7 @@ import {
   SpendingValidator,
   fromText,
   UTxO,
-  Assets
+  Assets,
 } from "lucid-cardano";
 
 import { Blueprint } from "../types/blueprint.ts";
@@ -56,6 +56,7 @@ export type NftInfo = {
   assetName: string;
   role: NftRole;
   isListed: boolean;
+  isApproved: boolean;
   votes: string[];
 };
 
@@ -240,6 +241,7 @@ export const WalletProvider = ({
       asset_name: Data.Bytes(),
       role: Data.Any(),
       isListed: Data.Boolean(),
+      isApproved: Data.Boolean(),
       votes: Data.Array(Data.Bytes()),
     });
 
@@ -253,6 +255,7 @@ export const WalletProvider = ({
       assetName: datum.asset_name,
       role: rolesMap[roleIndex],
       isListed: datum.isListed,
+      isApproved: datum.isApproved,
       votes: datum.votes,
     } as NftInfo;
 
@@ -380,7 +383,7 @@ export const WalletProvider = ({
           new Constr(0, [assetData.utxo.txHash]),
           BigInt(assetData.utxo.outputIndex),
         ]);
-        mints.push(new Constr(0, [roleData, outRefData, assetData.assetName]))
+        mints.push(new Constr(0, [roleData, outRefData, assetData.assetName]));
       }
 
       const redeemer = Data.to(
@@ -389,21 +392,23 @@ export const WalletProvider = ({
 
       const falseData = new Constr(0, []);
 
-      let mintAssets: Assets = {}
+      let mintAssets: Assets = {};
       for (const assetData of assetsData) {
         mintAssets[assetData.asset] = BigInt(1);
       }
 
-      let metadata: Record<string, any> = {}
+      const validAsset = `${scriptInfo.policyId}${fromText("valid")}`;
+      mintAssets[validAsset] = BigInt(assetsData.length);
+
+      let metadata: Record<string, any> = {};
       for (const assetData of assetsData) {
         metadata[assetData.assetName] = {
-          name:
-                nftName.length > 64 ? splitStringIntoChunks(nftName) : nftName,
-              image: [
-                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
-                "a1-b278-29b31a3abab6",
-              ],
-        }
+          name: nftName.length > 64 ? splitStringIntoChunks(nftName) : nftName,
+          image: [
+            "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
+            "a1-b278-29b31a3abab6",
+          ],
+        };
       }
 
       let tx = lucid
@@ -413,21 +418,24 @@ export const WalletProvider = ({
         .attachMetadata(721, {
           [scriptInfo.policyId]: metadata,
         })
-        .mintAssets(mintAssets, redeemer)
+        .mintAssets(mintAssets, redeemer);
 
       for (const assetData of assetsData) {
         const roleData = new Constr(getDatumIdByRole(assetData.role), []);
         const datum = Data.to(
-          new Constr(0, [assetData.assetName, roleData, falseData, []])
-        )
+          new Constr(0, [assetData.assetName, roleData, falseData, falseData, []])
+        );
 
         tx = tx.payToContract(
           scriptInfo.address,
           { inline: datum },
-          { lovelace: BigInt(getPriceByRole(assetData.role)) }
-        )
+          {
+            lovelace: BigInt(getPriceByRole(assetData.role)),
+            [validAsset]: BigInt(1),
+          }
+        );
       }
-      
+
       const result = await tx.complete();
 
       const txSigned = await result.sign().complete();
