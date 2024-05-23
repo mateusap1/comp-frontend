@@ -13,7 +13,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
-          <Route path="/nfts" element={<NFTs />} />
+          {/* <Route path="/nfts" element={<NFTs />} /> */}
         </Routes>
       </BrowserRouter>
     </WalletProvider>

@@ -11,9 +11,14 @@ import {
   Cardano,
   MintingPolicy,
   SpendingValidator,
+  Validator,
   fromText,
   UTxO,
   Assets,
+  applyParamsToScript,
+  applyDoubleCborEncoding,
+  OutRef,
+  PolicyId,
 } from "lucid-cardano";
 
 import { Blueprint } from "../types/blueprint.ts";
@@ -27,15 +32,16 @@ export type WalletContext = {
   currentWallet: FullWallet | null;
   getWallets: () => Cardano | null;
   connect: (wallet: string) => Promise<void>;
-  loadScriptInfo: () => Promise<void>;
-  scriptInfo: ScriptInfo | null;
   getPriceByRole: (role: NftRole) => number;
-  buyRolesNft: (roles: NftRole[], nftName: string) => Promise<void>;
-  getUserNfts: () => Promise<string[]>;
-  getAllNfts: () => Promise<NftInfo[]>;
-  listNft: (assetName: string) => Promise<void>;
-  voteNft: (ownerNfts: string[], assetName: string) => Promise<void>;
-  reviewNft: (ownerNfts: string[], assetName: string, approve: boolean) => Promise<void>;
+  mintAdmin: (
+    competitionName: string,
+    competitionDescription: string,
+    modAddress: string,
+    userPrice: number,
+    votePolicyId: string,
+    endDate: number,
+    rewardRates: RewardRates
+  ) => Promise<void>;
 };
 
 export interface FullWallet extends WalletApi {
@@ -62,11 +68,30 @@ export type NftInfo = {
   votes: string[];
 };
 
-export type ScriptInfo = {
-  mintScript: MintingPolicy;
-  spendScript: SpendingValidator;
+export type CompiledScriptInfo = {
+  script: Validator;
   policyId: string;
   address: string;
+};
+
+export type WinnerRate = {
+  user: number;
+  vote: number;
+};
+
+export type RewardRates = {
+  admin: number;
+  moderator: number;
+  winners: WinnerRate[];
+};
+
+export type ScriptParams = {
+  outRef: OutRef;
+  adminPrice: number;
+  userPrice: number;
+  votePolicyId: PolicyId;
+  endDate: number;
+  rewardRates: RewardRates;
 };
 
 export const WalletProvider = ({
@@ -81,8 +106,6 @@ export const WalletProvider = ({
   const [lucid, setLucid] = useState<Lucid | null>(null);
   const [wallets, setWallets] = useState<Cardano | null>(null);
   const [walletLoaded, setWalletLoaded] = useState<boolean>(false);
-
-  const [scriptInfo, setScriptInfo] = useState<ScriptInfo | null>(null);
 
   useEffect(() => {
     loadCardano();
@@ -171,37 +194,70 @@ export const WalletProvider = ({
     }
   };
 
-  const loadScriptInfo = async () => {
+  const compileScript = async (
+    params: ScriptParams
+  ): Promise<CompiledScriptInfo> => {
     if (!lucid) {
       return Promise.reject("Lucid not loaded yet.");
     }
 
     const mint = (blueprint as Blueprint).validators.find(
-      (v) => v.title === "gift.nft_mint"
+      (v) => v.title === "comp.mint"
     );
 
     const spend = (blueprint as Blueprint).validators.find(
-      (v) => v.title === "gift.nft_redeem"
+      (v) => v.title === "comp.spend"
     );
 
-    setScriptInfo({
-      mintScript: {
-        type: "PlutusV2",
-        script: mint!.compiledCode,
-      },
-      spendScript: {
-        type: "PlutusV2",
-        script: spend!.compiledCode,
-      },
-      policyId: lucid.utils.validatorToScriptHash({
-        type: "PlutusV2",
-        script: mint!.compiledCode,
-      }),
-      address: lucid.utils.validatorToAddress({
-        type: "PlutusV2",
-        script: spend!.compiledCode,
-      }),
+    const outRefData = new Constr(0, [
+      new Constr(0, [params.outRef.txHash]),
+      BigInt(params.outRef.outputIndex),
+    ]);
+
+    const adminPriceData = BigInt(params.adminPrice);
+    const userPriceData = BigInt(params.userPrice);
+
+    const votePolicyIdData = params.votePolicyId;
+    const endDateData = BigInt(params.endDate);
+    const rewardRatesData = new Constr(0, [
+      BigInt(params.rewardRates.admin),
+      BigInt(params.rewardRates.moderator),
+      [
+        new Constr(
+          0,
+          params.rewardRates.winners.map(
+            ({ user, vote }) => new Constr(0, [BigInt(user), BigInt(vote)])
+          )
+        ),
+      ],
+    ]);
+
+    const paramsData = new Constr(0, [
+      outRefData,
+      adminPriceData,
+      userPriceData,
+      votePolicyIdData,
+      endDateData,
+      rewardRatesData,
+    ]);
+
+    const script = applyParamsToScript(mint!.compiledCode, [paramsData]);
+
+    const policyId = lucid.utils.validatorToScriptHash({
+      type: "PlutusV2",
+      script: script,
     });
+
+    const address = lucid.utils.validatorToAddress({
+      type: "PlutusV2",
+      script: script,
+    });
+
+    return {
+      script: { type: "PlutusV2", script: applyDoubleCborEncoding(script) },
+      policyId: policyId,
+      address: address,
+    };
   };
 
   const getPriceByRole = (role: NftRole) => {
@@ -266,60 +322,6 @@ export const WalletProvider = ({
     return nftInfo;
   };
 
-  const getUserNfts = async () => {
-    if (!lucid) {
-      return Promise.reject("Lucid not loaded yet.");
-    }
-
-    if (!scriptInfo) {
-      return Promise.reject("Script Info has not been loaded yet!");
-    }
-
-    const wallet = await getCurrentWallet();
-    if (!wallet) {
-      return Promise.reject("Wallet has not been loaded yet!");
-    }
-
-    lucid.selectWallet(wallet);
-
-    let assets: string[] = [];
-    const utxos = await lucid.wallet.getUtxos()!;
-    for (const utxo of utxos) {
-      for (const asset in utxo.assets) {
-        if (asset.slice(0, 56) == scriptInfo.policyId) {
-          assets.push(asset);
-        }
-      }
-    }
-
-    return assets;
-  };
-
-  const getAllNfts = async () => {
-    if (!lucid) {
-      return Promise.reject("Lucid not loaded yet.");
-    }
-
-    if (!scriptInfo) {
-      return Promise.reject("Script Info has not been loaded yet!");
-    }
-
-    const wallet = await getCurrentWallet();
-    if (!wallet) {
-      return Promise.reject("Wallet has not been loaded yet!");
-    }
-
-    lucid.selectWallet(wallet);
-
-    const utxos = await lucid.provider.getUtxos(scriptInfo.address);
-    let roles: NftInfo[] = [];
-    for (const utxo of utxos) {
-      roles.push(getAssetInfoFromUTxO(utxo));
-    }
-
-    return roles;
-  };
-
   const splitStringIntoChunks = (input: string): string[] => {
     const chunkSize = 64;
     const chunks: string[] = [];
@@ -331,13 +333,17 @@ export const WalletProvider = ({
     return chunks;
   };
 
-  const buyRolesNft = async (roles: NftRole[], nftName: string) => {
+  const mintAdmin = async (
+    competitionName: string,
+    competitionDescription: string,
+    modAddress: string,
+    userPrice: number,
+    votePolicyId: string,
+    endDate: number,
+    rewardRates: RewardRates
+  ) => {
     if (!lucid) {
       return Promise.reject("Lucid not loaded yet.");
-    }
-
-    if (!scriptInfo) {
-      return Promise.reject("Script Info has not been loaded yet!");
     }
 
     const wallet = await getCurrentWallet();
@@ -349,413 +355,96 @@ export const WalletProvider = ({
 
     try {
       const utxos = await lucid.wallet.getUtxos()!;
-      if (utxos.length < roles.length) {
-        toast.error(
-          `User does not have enough UTxOs, must have at least ${roles.length}`
-        );
-        return;
-      }
-      const assetsUTxOs = utxos.slice(0, roles.length);
+      const outRef = utxos[0];
 
-      type AssetData = {
-        assetName: string;
-        asset: string;
-        role: NftRole;
-        utxo: UTxO;
-      };
+      // Compile our script based on parameters
+      const compiledScriptInfo = await compileScript({
+        outRef,
+        adminPrice: 10_000_000,
+        userPrice,
+        votePolicyId,
+        endDate,
+        rewardRates,
+      });
 
-      let assetsData: AssetData[] = [];
-      for (let i = 0; i < roles.length; i++) {
-        const utxo = assetsUTxOs[i];
-        const role = roles[i];
-        const assetName = getAssetNameFromOutRef(utxo.txHash, utxo.outputIndex);
-        assetsData.push({
-          assetName: assetName,
-          asset: `${scriptInfo.policyId}${assetName}`,
-          role: role,
-          utxo: utxo,
-        });
-      }
+      console.log("Beep");
 
-      // const assetName = getAssetNameFromOutRef(utxo.txHash, utxo.outputIndex);
+      const adminAssetName = fromText("admin");
+      const adminAsset = `${compiledScriptInfo.policyId}${adminAssetName}`;
+
+      const modAssetName = fromText("mod");
+      const modAsset = `${compiledScriptInfo.policyId}${modAssetName}`;
+
+      const machineAssetName = fromText("admin-machine");
+      const machineAsset = `${compiledScriptInfo.policyId}${machineAssetName}`;
+
       // const asset = `${scriptInfo.policyId}${assetName}`;
 
-      let mints = [];
-      for (const assetData of assetsData) {
-        const roleData = new Constr(getDatumIdByRole(assetData.role), []);
-        const outRefData = new Constr(0, [
-          new Constr(0, [assetData.utxo.txHash]),
-          BigInt(assetData.utxo.outputIndex),
-        ]);
-        mints.push(new Constr(0, [roleData, outRefData, assetData.assetName]));
-      }
+      const redeemer = Data.to(new Constr(0, []));
+      const datum = Data.to(new Constr(0, [[], []]));
 
-      const redeemer = Data.to(
-        new Constr(0, [mints, [BigInt(-1), BigInt(1000)]])
-      );
+      const parsedCompetitionName =
+        competitionName.length > 64
+          ? splitStringIntoChunks(competitionName)
+          : competitionName;
+      const parsedCompetitionDescription =
+        competitionDescription.length > 64
+          ? splitStringIntoChunks(competitionDescription)
+          : competitionDescription;
 
-      const falseData = new Constr(0, []);
+      const adminName = `${competitionName} - Admin`;
+      const parsedAdminName =
+        adminName.length > 64 ? splitStringIntoChunks(adminName) : adminName;
 
-      let mintAssets: Assets = {};
-      for (const assetData of assetsData) {
-        mintAssets[assetData.asset] = BigInt(1);
-      }
-
-      const validAsset = `${scriptInfo.policyId}${fromText("valid")}`;
-      mintAssets[validAsset] = BigInt(assetsData.length);
-
-      let metadata: Record<string, any> = {};
-      for (const assetData of assetsData) {
-        metadata[assetData.assetName] = {
-          name: nftName.length > 64 ? splitStringIntoChunks(nftName) : nftName,
-          image: [
-            "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
-            "a1-b278-29b31a3abab6",
-          ],
-        };
-      }
+      const modName = `${competitionName} - Mod`;
+      const parsedModName =
+        modName.length > 64 ? splitStringIntoChunks(modName) : modName;
 
       let tx = lucid
         .newTx()
-        .collectFrom(assetsUTxOs)
-        .attachMintingPolicy(scriptInfo.mintScript)
+        .collectFrom([outRef])
+        .attachMintingPolicy(compiledScriptInfo.script)
         .attachMetadata(721, {
-          [scriptInfo.policyId]: metadata,
+          [compiledScriptInfo.policyId]: {
+            [adminAssetName]: {
+              Name: parsedAdminName,
+              Image: [
+                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
+                "a1-b278-29b31a3abab6",
+              ],
+              "Competition Name": parsedCompetitionName,
+              "Competition Description": parsedCompetitionDescription,
+            },
+            [modAssetName]: {
+              Name: parsedModName,
+              Image: [
+                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
+                "a1-b278-29b31a3abab6",
+              ],
+            },
+          },
         })
-        .mintAssets(mintAssets, redeemer);
-
-      for (const assetData of assetsData) {
-        const roleData = new Constr(getDatumIdByRole(assetData.role), []);
-        const datum = Data.to(
-          new Constr(0, [assetData.assetName, roleData, falseData, falseData, falseData, []])
-        );
-
-        tx = tx.payToContract(
-          scriptInfo.address,
+        .mintAssets(
+          {
+            [adminAsset]: BigInt(1),
+            [modAsset]: BigInt(1),
+            [machineAsset]: BigInt(1),
+          },
+          redeemer
+        )
+        .payToContract(
+          compiledScriptInfo.address,
           { inline: datum },
           {
-            lovelace: BigInt(getPriceByRole(assetData.role)),
-            [validAsset]: BigInt(1),
+            lovelace: BigInt(10_000_000),
+            [machineAsset]: BigInt(1),
           }
-        );
-      }
+        )
+        .payToAddress(modAddress, { [modAsset]: BigInt(1) });
 
       const result = await tx.complete();
 
       const txSigned = await result.sign().complete();
-
-      const txHash = await txSigned.submit();
-
-      console.log(`Successfully submitted transaction ${txHash}`);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const listNft = async (assetName: string) => {
-    if (!lucid) {
-      return Promise.reject("Lucid not loaded yet.");
-    }
-
-    if (!scriptInfo) {
-      return Promise.reject("Script Info has not been loaded yet!");
-    }
-
-    const wallet = await getCurrentWallet();
-    if (!wallet) {
-      return Promise.reject("Wallet has not been loaded yet!");
-    }
-
-    lucid.selectWallet(wallet);
-
-    try {
-      const utxos = await lucid.wallet.getUtxos()!;
-
-      const asset = `${scriptInfo.policyId}${assetName}`;
-
-      const address = await lucid?.wallet.address()!;
-      const owner = lucid?.utils.paymentCredentialOf(address).hash!;
-
-      const scriptUtxos = await lucid!.utxosAt(scriptInfo.address);
-      let scriptUTxO = null;
-      for (const utxo of scriptUtxos) {
-        const assetInfo = getAssetInfoFromUTxO(utxo);
-        if (assetInfo.assetName == assetName) {
-          scriptUTxO = utxo;
-          break;
-        }
-      }
-
-      if (!scriptUTxO) {
-        console.log(asset);
-        return Promise.reject("Script UTxO not found");
-      }
-
-      let referenceUtxo;
-      for (const utxo of utxos) {
-        for (const curAsset in utxo.assets) {
-          if (curAsset == asset) {
-            referenceUtxo = utxo;
-            break;
-          }
-        }
-      }
-
-      if (!referenceUtxo) {
-        console.log(asset);
-        return Promise.reject("Reference UTxO not found");
-      }
-
-      const assetInfo = getAssetInfoFromUTxO(scriptUTxO);
-
-      const redeemer = Data.to(
-        new Constr(1, [new Constr(0, [owner, new Constr(0, [])])])
-      );
-
-      const trueData = new Constr(1, []);
-      const falseData = new Constr(0, []);
-
-      const datum = Data.to(
-        new Constr(0, [
-          assetInfo.assetName,
-          new Constr(getDatumIdByRole(assetInfo.role), []),
-          trueData,
-          falseData,
-          falseData,
-          [],
-        ])
-      );
-
-      const tx = await lucid
-        .newTx()
-        .collectFrom([scriptUTxO], redeemer)
-        .attachSpendingValidator(scriptInfo.spendScript)
-        .readFrom([referenceUtxo])
-        .addSigner(address)
-        .payToContract(scriptInfo.address, { inline: datum }, scriptUTxO.assets)
-        .complete();
-
-      const txSigned = await tx.sign().complete();
-
-      const txHash = await txSigned.submit();
-
-      console.log(`Successfully submitted transaction ${txHash}`);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const voteNft = async (ownerNfts: string[], assetName: string) => {
-    if (!lucid) {
-      return Promise.reject("Lucid not loaded yet.");
-    }
-
-    if (!scriptInfo) {
-      return Promise.reject("Script Info has not been loaded yet!");
-    }
-
-    const wallet = await getCurrentWallet();
-    if (!wallet) {
-      return Promise.reject("Wallet has not been loaded yet!");
-    }
-
-    lucid.selectWallet(wallet);
-
-    try {
-      const utxos = await lucid.wallet.getUtxos()!;
-
-      const address = await lucid?.wallet.address()!;
-      const owner = lucid?.utils.paymentCredentialOf(address).hash!;
-
-      const scriptUtxos = await lucid!.utxosAt(scriptInfo.address);
-
-      let proofAssetInfo = null;
-      let voteAssetInfo = null;
-
-      let proofScriptUTxO = null;
-      let scriptUTxO = null;
-      for (const utxo of scriptUtxos) {
-        const assetInfo = getAssetInfoFromUTxO(utxo);
-        if (assetInfo.assetName == assetName && !scriptUTxO) {
-          voteAssetInfo = assetInfo;
-          scriptUTxO = utxo;
-        }
-
-        if (
-          ownerNfts.includes(`${scriptInfo.policyId}${assetInfo.assetName}`)
-        ) {
-          if (assetInfo.role == "Vote") {
-            proofAssetInfo = assetInfo;
-            proofScriptUTxO = utxo;
-          }
-        }
-      }
-
-      if (!scriptUTxO) {
-        return Promise.reject("Script UTxO not found");
-      }
-
-      if (!proofScriptUTxO) {
-        return Promise.reject("User does not have vote NFT");
-      }
-
-      const proofAsset = `${scriptInfo.policyId}${proofAssetInfo!.assetName}`;
-
-      let referenceUtxo;
-      for (const utxo of utxos) {
-        for (const curAsset in utxo.assets) {
-          if (curAsset == proofAsset) {
-            referenceUtxo = utxo;
-            break;
-          }
-        }
-      }
-
-      if (!referenceUtxo) {
-        console.log(proofAsset);
-        return Promise.reject("Reference UTxO not found");
-      }
-
-      const redeemer = Data.to(
-        new Constr(1, [
-          new Constr(0, [owner, new Constr(1, [proofAssetInfo!.assetName])]),
-        ])
-      );
-
-      const trueData = new Constr(1, []);
-      const falseData = new Constr(0, []);
-
-      const datum = Data.to(
-        new Constr(0, [
-          voteAssetInfo!.assetName,
-          new Constr(getDatumIdByRole(voteAssetInfo!.role), []),
-          trueData,
-          trueData,
-          falseData,
-          [proofAssetInfo!.assetName, ...voteAssetInfo!.votes],
-        ])
-      );
-
-      const tx = await lucid
-        .newTx()
-        .collectFrom([scriptUTxO], redeemer)
-        .attachSpendingValidator(scriptInfo.spendScript)
-        .readFrom([referenceUtxo, proofScriptUTxO])
-        .addSigner(address)
-        .payToContract(scriptInfo.address, { inline: datum }, scriptUTxO.assets)
-        .complete();
-
-      const txSigned = await tx.sign().complete();
-
-      const txHash = await txSigned.submit();
-
-      console.log(`Successfully submitted transaction ${txHash}`);
-    } catch (error) {
-      console.log(error);
-    }
-  };
-
-  const reviewNft = async (ownerNfts: string[], assetName: string, approve: boolean) => {
-    if (!lucid) {
-      return Promise.reject("Lucid not loaded yet.");
-    }
-
-    if (!scriptInfo) {
-      return Promise.reject("Script Info has not been loaded yet!");
-    }
-
-    const wallet = await getCurrentWallet();
-    if (!wallet) {
-      return Promise.reject("Wallet has not been loaded yet!");
-    }
-
-    lucid.selectWallet(wallet);
-
-    try {
-      const utxos = await lucid.wallet.getUtxos()!;
-
-      const address = await lucid?.wallet.address()!;
-      const owner = lucid?.utils.paymentCredentialOf(address).hash!;
-
-      const scriptUtxos = await lucid!.utxosAt(scriptInfo.address);
-
-      let proofAssetInfo = null;
-      let voteAssetInfo = null;
-
-      let proofScriptUTxO = null;
-      let scriptUTxO = null;
-      for (const utxo of scriptUtxos) {
-        const assetInfo = getAssetInfoFromUTxO(utxo);
-        if (assetInfo.assetName == assetName && !scriptUTxO) {
-          voteAssetInfo = assetInfo;
-          scriptUTxO = utxo;
-        }
-
-        if (
-          ownerNfts.includes(`${scriptInfo.policyId}${assetInfo.assetName}`)
-        ) {
-          if (assetInfo.role == "Moderator") {
-            proofAssetInfo = assetInfo;
-            proofScriptUTxO = utxo;
-          }
-        }
-      }
-
-      if (!scriptUTxO) {
-        return Promise.reject("Script UTxO not found");
-      }
-
-      if (!proofScriptUTxO) {
-        return Promise.reject("User does not have vote NFT");
-      }
-
-      const proofAsset = `${scriptInfo.policyId}${proofAssetInfo!.assetName}`;
-
-      let referenceUtxo;
-      for (const utxo of utxos) {
-        for (const curAsset in utxo.assets) {
-          if (curAsset == proofAsset) {
-            referenceUtxo = utxo;
-            break;
-          }
-        }
-      }
-
-      if (!referenceUtxo) {
-        console.log(proofAsset);
-        return Promise.reject("Reference UTxO not found");
-      }
-
-      const trueData = new Constr(1, []);
-      const falseData = new Constr(0, []);
-
-      const redeemer = Data.to(
-        new Constr(1, [
-          new Constr(0, [owner, new Constr(2, [proofAssetInfo!.assetName, approve ? trueData : falseData])]),
-        ])
-      );
-
-      const datum = Data.to(
-        new Constr(0, [
-          voteAssetInfo!.assetName,
-          new Constr(getDatumIdByRole(voteAssetInfo!.role), []),
-          trueData,
-          approve ? trueData : falseData,
-          approve ? falseData : trueData,
-          voteAssetInfo!.votes,
-        ])
-      );
-
-      const tx = await lucid
-        .newTx()
-        .collectFrom([scriptUTxO], redeemer)
-        .attachSpendingValidator(scriptInfo.spendScript)
-        .readFrom([referenceUtxo, proofScriptUTxO])
-        .addSigner(address)
-        .payToContract(scriptInfo.address, { inline: datum }, scriptUTxO.assets)
-        .complete();
-
-      const txSigned = await tx.sign().complete();
 
       const txHash = await txSigned.submit();
 
@@ -772,15 +461,8 @@ export const WalletProvider = ({
         currentWallet: currentFullWallet,
         getWallets: () => wallets,
         connect,
-        loadScriptInfo,
-        scriptInfo,
         getPriceByRole,
-        buyRolesNft,
-        getUserNfts,
-        getAllNfts,
-        listNft,
-        voteNft,
-        reviewNft,
+        mintAdmin,
       }}
     >
       {children}
