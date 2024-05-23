@@ -5,10 +5,32 @@ import { useWallet, NftRole, NftInfo } from "../contexts/WalletProvider";
 import ImageUploader from "../components/ImageUploader";
 import { Navbar } from "../components/Navbar";
 
+const formatDate = (date: Date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0"); // getMonth() returns 0-11, so we add 1
+  const day = String(date.getDate()).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+};
+
 const Home = () => {
   const [competitionName, setCompetitionName] = useState<string>("");
   const [competitionDescription, setCompetitionDescription] =
     useState<string>("");
+
+  const [moderatorAddress, setModeratorAddress] = useState<string>("");
+  const [userPrice, setUserPrice] = useState<number>(0);
+  const [votePolicyId, setVotePolicyId] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+
+  const [adminRate, setAdminRate] = useState<number>(0);
+  const [moderatorRate, setModeratorRate] = useState<number>(0);
+  const [fstUserRate, setFstUserRate] = useState<number>(0);
+  const [fstVoteRate, setFstVoteRate] = useState<number>(0);
+  const [sndUserRate, setSndUserRate] = useState<number>(0);
+  const [sndVoteRate, setSndVoteRate] = useState<number>(0);
+  const [trdUserRate, setTrdUserRate] = useState<number>(0);
+  const [trdVoteRate, setTrdVoteRate] = useState<number>(0);
 
   const { currentWallet, mintAdmin } = useWallet()!;
 
@@ -16,77 +38,158 @@ const Home = () => {
     <div>
       <Navbar />
       <div className="w-full justify-center flex p-8 flex flex-col">
-        <div className="p-4 w-full justify-center flex flex-col gap-8">
-          <div className="w-full flex justify-center">
-            <div className="w-full items-center justify-center flex flex-row gap-4">
+        <div className="p-4 w-full justify-center items-center flex flex-col gap-8">
+          <div className="w-96 flex flex-col gap-2">
+            <div className="w-full justify-between items-center flex flex-row gap-4">
               <span>Competition Name</span>
               <input
                 className="p-2 border-2 border-slate-600 rounded-lg w-64"
-                placeholder="Select your nft name"
                 type="text"
                 value={competitionName}
                 onChange={(e) => setCompetitionName(e.target.value)}
               />
             </div>
-            <div className="w-full items-center justify-center flex flex-row gap-4">
+            <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
               <span>Competition Description</span>
               <input
                 className="p-2 border-2 border-slate-600 rounded-lg w-64"
-                placeholder="Select your nft name"
                 type="text"
-                value={competitionName}
-                onChange={(e) => setCompetitionName(e.target.value)}
+                value={competitionDescription}
+                onChange={(e) => setCompetitionDescription(e.target.value)}
               />
             </div>
-            <div className="w-full items-center justify-center flex flex-row gap-4">
+            <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
               <span>Moderator Address</span>
               <input
                 className="p-2 border-2 border-slate-600 rounded-lg w-64"
-                placeholder="Select your nft name"
                 type="text"
-                value={competitionName}
-                onChange={(e) => setCompetitionName(e.target.value)}
+                value={moderatorAddress}
+                onChange={(e) => setModeratorAddress(e.target.value)}
               />
             </div>
-            <div className="w-full items-center justify-center flex flex-row gap-4">
+            <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
               <span>User Price</span>
               <input
-                className="p-2 border-2 border-slate-600 rounded-lg w-64"
-                placeholder="Select your nft name"
-                type="text"
-                value={competitionName}
-                onChange={(e) => setCompetitionName(e.target.value)}
+                className="p-2 border-2 border-slate-600 rounded-lg w-32"
+                type="number"
+                min={1}
+                // step={0.1}
+                value={userPrice}
+                onChange={(e) => setUserPrice(Number(e.target.value))}
               />
             </div>
-            <div className="w-full items-center justify-center flex flex-row gap-4">
+            <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
               <span>Vote Policy ID</span>
               <input
                 className="p-2 border-2 border-slate-600 rounded-lg w-64"
-                placeholder="Select your nft name"
                 type="text"
-                value={competitionName}
-                onChange={(e) => setCompetitionName(e.target.value)}
+                value={votePolicyId}
+                onChange={(e) => setVotePolicyId(e.target.value)}
               />
             </div>
-            <div className="w-full items-center justify-center flex flex-row gap-4">
+            <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
               <span>End Date</span>
               <input
                 className="p-2 border-2 border-slate-600 rounded-lg w-64"
                 placeholder="Select your nft name"
-                type="text"
-                value={competitionName}
-                onChange={(e) => setCompetitionName(e.target.value)}
+                type="date"
+                value={endDate}
+                onChange={(e) => setEndDate(e.target.value)}
               />
             </div>
-            <div className="w-full items-center justify-center flex flex-row gap-4">
-              <span>Reward Rates</span>
-              <input
-                className="p-2 border-2 border-slate-600 rounded-lg w-64"
-                placeholder="Select your nft name"
-                type="text"
-                value={competitionName}
-                onChange={(e) => setCompetitionName(e.target.value)}
-              />
+            <div className="w-full justify-between items-center justify-center flex flex-col gap-2 mt-4">
+              <span className="text-xl font-semibold">Reward Rate</span>
+              <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="Admin"
+                  value={adminRate}
+                  onChange={(e) => setAdminRate(Number(e.target.value))}
+                />
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="Moderator"
+                  value={moderatorRate}
+                  onChange={(e) => setModeratorRate(Number(e.target.value))}
+                />
+              </div>
+              <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
+                <span className="font-medium text-xl">#1</span>
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="User"
+                  value={fstUserRate}
+                  onChange={(e) => setFstUserRate(Number(e.target.value))}
+                />
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="Vote"
+                  value={fstVoteRate}
+                  onChange={(e) => setFstVoteRate(Number(e.target.value))}
+                />
+              </div>
+              <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
+                <span className="font-medium text-xl">#2</span>
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="User"
+                  value={sndUserRate}
+                  onChange={(e) => setSndUserRate(Number(e.target.value))}
+                />
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="Vote"
+                  value={sndVoteRate}
+                  onChange={(e) => setSndVoteRate(Number(e.target.value))}
+                />
+              </div>
+              <div className="w-full justify-between items-center justify-center flex flex-row gap-4">
+                <span className="font-medium text-xl">#3</span>
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="User"
+                  value={trdUserRate}
+                  onChange={(e) => setTrdUserRate(Number(e.target.value))}
+                />
+                <input
+                  className="p-2 border-2 border-slate-600 rounded-lg w-full"
+                  type="number"
+                  min={0}
+                  max={100}
+                  step={1}
+                  placeholder="Vote"
+                  value={trdVoteRate}
+                  onChange={(e) => setTrdVoteRate(Number(e.target.value))}
+                />
+              </div>
             </div>
           </div>
           <div className="w-full flex flex-col items-center justify-center">
@@ -95,35 +198,26 @@ const Home = () => {
                 className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
                 onClick={() =>
                   mintAdmin(
-                    "Comp 1",
-                    "Description comp 1",
-                    "addr_test1qp747wu6gsvxplhzv5uz5mhw47rv82pl5ydzkgfuj037cyq5ca83vxg4dzuudph5uh32pncujdjj5w7uvers088vagaqcy0mlr",
-                    5_000_000,
-                    "02aa7e9d83f43ad54ab2585900292db7280ec43410e7563dac934d17",
-                    1716564341000,
+                    competitionName,
+                    competitionDescription,
+                    moderatorAddress,
+                    userPrice * 1_000_000,
+                    votePolicyId,
+                    (new Date(endDate)).getUTCMilliseconds(),
                     {
-                      admin: 50,
-                      moderator: 20,
-                      winners: [{user: 20, vote: 0}, {user: 10, vote: 0}]
+                      admin: adminRate,
+                      moderator: moderatorRate,
+                      winners: [
+                        { user: fstUserRate, vote: fstVoteRate },
+                        { user: sndUserRate, vote: sndVoteRate },
+                        { user: trdUserRate, vote: trdVoteRate },
+                      ],
                     }
                   )
                 }
               >
                 Create competition
               </button>
-              {/* <div className="w-full flex flex-row items-center justify-center">
-                <input
-                  className="p-4 w-24 text-xl border-2 rounded-lg border-gray-800"
-                  placeholder="amount"
-                  type="number"
-                />
-                <button
-                  className="w-64 py-4 border-2 border-gray-800 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
-                  onClick={() => buyRolesNft(selectedRoles, nftName)}
-                >
-                  Buy User
-                </button>
-              </div> */}
             </div>
           </div>
         </div>
