@@ -12,7 +12,7 @@ export const Navbar = () => {
           <div className="flex">
           <ul className="flex items-center space-x-4">
               <li><a href="/" className="text-white text-2xl hover:text-gray-300">Home</a></li>
-              <li><a href="/nfts" className="text-white text-2xl hover:text-gray-300">View NFTs</a></li>
+              <li><a href="/competitions" className="text-white text-2xl hover:text-gray-300">Competitions</a></li>
               </ul>
           </div>
           <div className="hidden md:block">

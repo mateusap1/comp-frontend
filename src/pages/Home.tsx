@@ -13,6 +13,15 @@ const formatDate = (date: Date) => {
   return `${year}-${month}-${day}`;
 };
 
+const convertToDate = (dateString: string) => {
+  const dateParts = dateString.split("-");
+  const year = parseInt(dateParts[0]);
+  const month = parseInt(dateParts[1]) - 1; // Months are 0-based in JavaScript
+  const day = parseInt(dateParts[2]);
+
+  return new Date(year, month, day);
+};
+
 const Home = () => {
   const [competitionName, setCompetitionName] = useState<string>("");
   const [competitionDescription, setCompetitionDescription] =
@@ -94,7 +103,13 @@ const Home = () => {
                 placeholder="Select your nft name"
                 type="date"
                 value={endDate}
-                onChange={(e) => setEndDate(e.target.value)}
+                onChange={(e) => {
+                  const date = convertToDate(e.target.value)
+                  console.log(date)
+                  console.log(date.getTime())
+
+                  setEndDate(e.target.value)
+                }}
               />
             </div>
             <div className="w-full justify-between items-center justify-center flex flex-col gap-2 mt-4">
@@ -203,7 +218,7 @@ const Home = () => {
                     moderatorAddress,
                     userPrice * 1_000_000,
                     votePolicyId,
-                    (new Date(endDate)).getUTCMilliseconds(),
+                    convertToDate(endDate).getTime(),
                     {
                       admin: adminRate,
                       moderator: moderatorRate,

@@ -5,7 +5,7 @@ import { Routes, Route, BrowserRouter } from "react-router-dom";
 import { WalletProvider } from "./contexts/WalletProvider";
 
 import Home from "./pages/Home";
-import NFTs from "./pages/Nfts";
+import ListCompetition from "./pages/ListCompetition";
 
 function App() {
   return (
@@ -13,7 +13,7 @@ function App() {
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<Home />} />
-          {/* <Route path="/nfts" element={<NFTs />} /> */}
+          <Route path="/competitions" element={<ListCompetition />} />
         </Routes>
       </BrowserRouter>
     </WalletProvider>

@@ -32,7 +32,7 @@ export type WalletContext = {
   currentWallet: FullWallet | null;
   getWallets: () => Cardano | null;
   connect: (wallet: string) => Promise<void>;
-  getPriceByRole: (role: NftRole) => number;
+  backEndGetCompetitions: () => Promise<Competition[]>;
   mintAdmin: (
     competitionName: string,
     competitionDescription: string,
@@ -41,6 +41,11 @@ export type WalletContext = {
     votePolicyId: string,
     endDate: number,
     rewardRates: RewardRates
+  ) => Promise<void>;
+  mintUser: (
+    competiton: Competition,
+    userName: string,
+    amount: number
   ) => Promise<void>;
 };
 
@@ -83,6 +88,23 @@ export type RewardRates = {
   admin: number;
   moderator: number;
   winners: WinnerRate[];
+};
+
+export type Competition = {
+  name: string;
+  policyId: string;
+  address: string;
+  params: ScriptParams;
+};
+
+type ModifiedScriptParams = {
+  outRefHash: string;
+  outRefIndex: number;
+  adminPrice: number;
+  userPrice: number;
+  votePolicyId: PolicyId;
+  endDate: number;
+  rewardRates: RewardRates;
 };
 
 export type ScriptParams = {
@@ -165,6 +187,36 @@ export const WalletProvider = ({
     }
   };
 
+  const backEndGetCompetitions = async (): Promise<Competition[]> => {
+    const projectsRaw = localStorage.getItem("@competitions");
+    if (projectsRaw) {
+      return JSON.parse(projectsRaw);
+    } else {
+      return [];
+    }
+  };
+
+  const backEndSaveCompetition = async (
+    name: string,
+    policyId: string,
+    address: string,
+    params: ScriptParams
+  ) => {
+    const projects = await backEndGetCompetitions();
+    localStorage.setItem(
+      "@competitions",
+      JSON.stringify([
+        {
+          name,
+          policyId,
+          address,
+          params,
+        },
+        ...projects,
+      ])
+    );
+  };
+
   const updateCurrentFullWallet = async () => {
     const currentFullWallet = await getCurrentWallet();
     setCurrentFullWallet(currentFullWallet);
@@ -203,10 +255,6 @@ export const WalletProvider = ({
 
     const mint = (blueprint as Blueprint).validators.find(
       (v) => v.title === "comp.mint"
-    );
-
-    const spend = (blueprint as Blueprint).validators.find(
-      (v) => v.title === "comp.spend"
     );
 
     const outRefData = new Constr(0, [
@@ -258,28 +306,6 @@ export const WalletProvider = ({
       policyId: policyId,
       address: address,
     };
-  };
-
-  const getPriceByRole = (role: NftRole) => {
-    const price = {
-      Admin: 20_000_000,
-      Moderator: 15_000_000,
-      Vote: 10_000_000,
-      User: 5_000_000,
-    };
-
-    return price[role];
-  };
-
-  const getDatumIdByRole = (role: NftRole) => {
-    const datum = {
-      Admin: 0,
-      Moderator: 1,
-      Vote: 2,
-      User: 3,
-    };
-
-    return datum[role];
   };
 
   const getAssetNameFromOutRef = (txHash: string, index: number) => {
@@ -357,17 +383,20 @@ export const WalletProvider = ({
       const utxos = await lucid.wallet.getUtxos()!;
       const outRef = utxos[0];
 
-      // Compile our script based on parameters
-      const compiledScriptInfo = await compileScript({
-        outRef,
+      const params = {
+        outRef: {
+          txHash: outRef.txHash,
+          outputIndex: outRef.outputIndex,
+        },
         adminPrice: 10_000_000,
         userPrice,
         votePolicyId,
         endDate,
         rewardRates,
-      });
+      };
 
-      console.log("Beep");
+      // Compile our script based on parameters
+      const compiledScriptInfo = await compileScript(params);
 
       const adminAssetName = fromText("admin");
       const adminAsset = `${compiledScriptInfo.policyId}${adminAssetName}`;
@@ -377,8 +406,6 @@ export const WalletProvider = ({
 
       const machineAssetName = fromText("admin-machine");
       const machineAsset = `${compiledScriptInfo.policyId}${machineAssetName}`;
-
-      // const asset = `${scriptInfo.policyId}${assetName}`;
 
       const redeemer = Data.to(new Constr(0, []));
       const datum = Data.to(new Constr(0, [[], []]));
@@ -448,6 +475,110 @@ export const WalletProvider = ({
 
       const txHash = await txSigned.submit();
 
+      await backEndSaveCompetition(
+        competitionName,
+        compiledScriptInfo.policyId,
+        compiledScriptInfo.address,
+        params
+      );
+
+      console.log(`Successfully submitted transaction ${txHash}`);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
+  const mintUser = async (
+    { params, name: competitionName, address: test_address }: Competition,
+    userName: string,
+    amount: number
+  ) => {
+    if (!lucid) {
+      return Promise.reject("Lucid not loaded yet.");
+    }
+
+    const wallet = await getCurrentWallet();
+    if (!wallet) {
+      return Promise.reject("Wallet has not been loaded yet!");
+    }
+
+    lucid.selectWallet(wallet);
+
+    try {
+      const utxos = await lucid.wallet.getUtxos()!;
+      const outRef = utxos[0];
+
+      const compiledScriptInfo = await compileScript(params);
+
+      const userAssetName = getAssetNameFromOutRef(
+        outRef.txHash,
+        outRef.outputIndex
+      );
+      const userAsset = `${compiledScriptInfo.policyId}${userAssetName}`;
+
+      const machineAssetName = fromText("user-machine");
+      const machineAsset = `${compiledScriptInfo.policyId}${machineAssetName}`;
+
+      const redeemer = Data.to(
+        new Constr(1, [
+          [
+            new Constr(0, [
+              new Constr(0, [outRef.txHash]),
+              BigInt(outRef.outputIndex),
+            ]),
+          ],
+        ])
+      );
+      const datum = Data.to(new Constr(2, [userAssetName]));
+
+      const parsedCompetitionName =
+        competitionName.length > 64
+          ? splitStringIntoChunks(competitionName)
+          : competitionName;
+
+      const parsedUserName =
+        userName.length > 64 ? splitStringIntoChunks(userName) : userName;
+
+      let tx = lucid
+        .newTx()
+        .collectFrom([outRef])
+        .attachMintingPolicy(compiledScriptInfo.script)
+        .attachMetadata(721, {
+          [compiledScriptInfo.policyId]: {
+            [userAssetName]: {
+              Name: parsedUserName,
+              Image: [
+                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
+                "a1-b278-29b31a3abab6",
+              ],
+              "Competition Name": parsedCompetitionName,
+            },
+          },
+        })
+        .mintAssets(
+          {
+            [userAsset]: BigInt(1),
+            [machineAsset]: BigInt(1),
+          },
+          redeemer
+        )
+        .payToContract(
+          compiledScriptInfo.address,
+          { inline: datum },
+          {
+            lovelace: BigInt(params.userPrice),
+            [machineAsset]: BigInt(1),
+          }
+        )
+        .validFrom(Date.now() - 20 * 60 * 1_000)
+        .validTo(Date.now() + 30 * 60 * 1_000);
+
+      const result = await tx.complete();
+
+      const txSigned = await result.sign().complete();
+
+      const txHash = await txSigned.submit();
+
       console.log(`Successfully submitted transaction ${txHash}`);
     } catch (error) {
       console.log(error);
@@ -460,9 +591,10 @@ export const WalletProvider = ({
         walletLoaded,
         currentWallet: currentFullWallet,
         getWallets: () => wallets,
+        backEndGetCompetitions,
         connect,
-        getPriceByRole,
         mintAdmin,
+        mintUser,
       }}
     >
       {children}
