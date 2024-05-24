@@ -25,6 +25,8 @@ import { Blueprint } from "../types/blueprint.ts";
 import blueprint from "../assets/plutus.json";
 import { toast } from "react-toastify";
 
+import axios from "axios";
+
 window.cardano = window.cardano || {};
 
 export type WalletContext = {
@@ -88,19 +90,10 @@ export type RewardRates = {
 
 export type Competition = {
   name: string;
+  description: string;
   policyId: string;
   address: string;
   params: ScriptParams;
-};
-
-type ModifiedScriptParams = {
-  outRefHash: string;
-  outRefIndex: number;
-  adminPrice: number;
-  userPrice: number;
-  votePolicyId: PolicyId;
-  endDate: number;
-  rewardRates: RewardRates;
 };
 
 export type ScriptParams = {
@@ -111,6 +104,10 @@ export type ScriptParams = {
   endDate: number;
   rewardRates: RewardRates;
 };
+
+const baseAxios = axios.create({
+  baseURL: process.env.REACT_APP_BACKEND_BASE_URL,
+});
 
 export const WalletProvider = ({
   children,
@@ -184,33 +181,58 @@ export const WalletProvider = ({
   };
 
   const backEndGetCompetitions = async (): Promise<Competition[]> => {
-    const projectsRaw = localStorage.getItem("@competitions");
-    if (projectsRaw) {
-      return JSON.parse(projectsRaw);
-    } else {
-      return [];
+    try {
+      const result = await baseAxios.get("/marketplace/competitions");
+      const competitions = result.data.competitions;
+  
+      return competitions.map((comp: any) => ({
+        name: comp.name,
+        description: comp.description,
+        policyId: comp.policyId,
+        address: comp.address,
+        params: {
+          outRef: {
+            txHash: comp.outRefHash,
+            outputIndex: comp.outRefIndex,
+          },
+          adminPrice: comp.adminPrice,
+          userPrice: comp.userPrice,
+          votePolicyId: comp.votePolicyId,
+          endDate: new Date(comp.endDate).getTime(),
+          rewardRates: JSON.parse(comp.rewardRates),
+        },
+      }));
+    } catch(error) {
+      console.log(error)
     }
+    
   };
 
   const backEndSaveCompetition = async (
     name: string,
+    description: string,
     policyId: string,
     address: string,
     params: ScriptParams
   ) => {
-    const projects = await backEndGetCompetitions();
-    localStorage.setItem(
-      "@competitions",
-      JSON.stringify([
-        {
-          name,
-          policyId,
-          address,
-          params,
-        },
-        ...projects,
-      ])
-    );
+    try {
+      const result = await baseAxios.post("/marketplace/competitions/create", {
+        name: name,
+        description: description,
+        policyId: policyId,
+        address: address,
+        outRefHash: params.outRef.txHash,
+        outRefIndex: params.outRef.outputIndex,
+        adminPrice: params.adminPrice,
+        userPrice: params.userPrice,
+        votePolicyId: params.votePolicyId,
+        endDate: (new Date(params.endDate)).toISOString(),
+        rewardRates: JSON.stringify(params.rewardRates),
+      });
+    } catch(error) {
+      console.log(error)
+    }
+    
   };
 
   const updateCurrentFullWallet = async () => {
@@ -473,6 +495,7 @@ export const WalletProvider = ({
 
       await backEndSaveCompetition(
         competitionName,
+        competitionDescription,
         compiledScriptInfo.policyId,
         compiledScriptInfo.address,
         params
@@ -579,7 +602,7 @@ export const WalletProvider = ({
       for (const userAssetName of userAssetNames) {
         tx = tx.payToContract(
           compiledScriptInfo.address,
-          { inline:  Data.to(new Constr(2, [userAssetName])) },
+          { inline: Data.to(new Constr(2, [userAssetName])) },
           {
             lovelace: BigInt(params.userPrice),
             [machineAsset]: BigInt(1),
