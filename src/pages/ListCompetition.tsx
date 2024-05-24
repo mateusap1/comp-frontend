@@ -21,7 +21,8 @@ const ListCompetition = () => {
   const [competitions, setCompetitions] = useState<Competition[] | null>(null);
   const [users, setUsers] = useState<Record<string, User[]>>({});
 
-  const { backEndGetCompetitions, backEndGetUsers, mintUser } = useWallet()!;
+  const { backEndGetCompetitions, backEndGetUsers, mintUser } =
+    useWallet()!;
 
   useEffect(() => {
     loadCompetitions();
@@ -31,13 +32,13 @@ const ListCompetition = () => {
     const competitionsNew = await backEndGetCompetitions();
     setCompetitions(competitionsNew);
 
-    competitionsNew.forEach(({ policyId }) => loadUsers(policyId));
+    competitionsNew.forEach((comp) => loadUsers(comp));
   };
 
-  const loadUsers = async (competitionId: string) => {
-    const usersNew = await backEndGetUsers(competitionId);
+  const loadUsers = async (competition: Competition) => {
+    const usersNew = await backEndGetUsers(competition.policyId);
 
-    setUsers({ ...users, [competitionId]: usersNew });
+    setUsers({ ...users, [competition.policyId]: usersNew });
   };
 
   return (
@@ -139,12 +140,20 @@ const ListCompetition = () => {
                                 </span>
                               </div>
                             </div>
-                            <button
-                              className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
-                              onClick={() => {}}
-                            >
-                              Approve
-                            </button>
+                            <div className="flex flex-row gap-2">
+                              <button
+                                className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
+                                onClick={() => {}}
+                              >
+                                Approve
+                              </button>
+                              <button
+                                className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
+                                onClick={() => {}}
+                              >
+                                Reject
+                              </button>
+                            </div>
                           </div>
                         ))}
                     </div>

@@ -218,20 +218,22 @@ export const WalletProvider = ({
   };
 
   const backEndSaveCompetition = async (
+    scriptRefHash: string,
+    scriptRefIndex: number,
     name: string,
     description: string,
     policyId: string,
     address: string,
-    modAddress: string,
     params: ScriptParams
   ) => {
     try {
       await baseAxios.post("/marketplace/competitions/create", {
+        scriptRefHash: scriptRefHash,
+        scriptRefIndex: scriptRefIndex,
         name: name,
         description: description,
         policyId: policyId,
         address: address,
-        modAddress: modAddress,
         outRefHash: params.outRef.txHash,
         outRefIndex: params.outRef.outputIndex,
         adminPrice: params.adminPrice,
@@ -266,6 +268,8 @@ export const WalletProvider = ({
   };
 
   const backEndSaveUser = async (
+    scriptRefHash: string,
+    scriptRefIndex: number,
     competitionId: string,
     name: string,
     assetName: string
@@ -274,6 +278,8 @@ export const WalletProvider = ({
       await baseAxios.post(
         `/marketplace/competitions/${competitionId}/users/create`,
         {
+          scriptRefHash: scriptRefHash,
+          scriptRefIndex: scriptRefIndex,
           name: name,
           assetName: assetName,
         }
@@ -385,34 +391,6 @@ export const WalletProvider = ({
     result.set(txSlice, indexByteArray.length);
 
     return Buffer.from(result).toString("hex");
-  };
-
-  const getAssetInfoFromUTxO = (utxo: UTxO) => {
-    const Datum = Data.Object({
-      asset_name: Data.Bytes(),
-      role: Data.Any(),
-      isListed: Data.Boolean(),
-      isApproved: Data.Boolean(),
-      isRejected: Data.Boolean(),
-      votes: Data.Array(Data.Bytes()),
-    });
-
-    const datum = Data.from(utxo.datum!, Datum);
-
-    const rolesMap = ["Admin", "Moderator", "Vote", "User"];
-
-    const roleIndex: number = datum.role.index;
-
-    const nftInfo = {
-      assetName: datum.asset_name,
-      role: rolesMap[roleIndex],
-      isListed: datum.isListed,
-      isApproved: datum.isApproved,
-      isRejected: datum.isRejected,
-      votes: datum.votes,
-    } as NftInfo;
-
-    return nftInfo;
   };
 
   const splitStringIntoChunks = (input: string): string[] => {
@@ -543,11 +521,12 @@ export const WalletProvider = ({
       const txHash = await txSigned.submit();
 
       await backEndSaveCompetition(
+        txHash,
+        0,
         competitionName,
         competitionDescription,
         compiledScriptInfo.policyId,
         compiledScriptInfo.address,
-        modAddress,
         params
       );
 
@@ -668,6 +647,8 @@ export const WalletProvider = ({
 
       userNames.forEach(async (name, i) => {
         await backEndSaveUser(
+          txHash,
+          i,
           compiledScriptInfo.policyId,
           name,
           userAssetNames[i]
