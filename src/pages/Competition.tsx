@@ -25,7 +25,7 @@ const Competition = ({ competition }: CompetitionProps) => {
           <div className="w-64 flex flex-col items-center justify-center gap-4">
             <button
               className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
-              onClick={() => mintUser(competition, "User #1", 1)}
+              onClick={() => mintUser(competition, ["User #1"])}
             >
               Buy User
             </button>

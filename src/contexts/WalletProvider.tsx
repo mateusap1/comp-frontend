@@ -42,11 +42,7 @@ export type WalletContext = {
     endDate: number,
     rewardRates: RewardRates
   ) => Promise<void>;
-  mintUser: (
-    competiton: Competition,
-    userName: string,
-    amount: number
-  ) => Promise<void>;
+  mintUser: (competiton: Competition, userNames: string[]) => Promise<void>;
 };
 
 export interface FullWallet extends WalletApi {
@@ -490,8 +486,7 @@ export const WalletProvider = ({
 
   const mintUser = async (
     { params, name: competitionName, address: test_address }: Competition,
-    userName: string,
-    amount: number
+    userNames: string[]
   ) => {
     if (!lucid) {
       return Promise.reject("Lucid not loaded yet.");
@@ -505,73 +500,92 @@ export const WalletProvider = ({
     lucid.selectWallet(wallet);
 
     try {
-      const utxos = await lucid.wallet.getUtxos()!;
-      const outRef = utxos[0];
-
       const compiledScriptInfo = await compileScript(params);
 
-      const userAssetName = getAssetNameFromOutRef(
-        outRef.txHash,
-        outRef.outputIndex
+      const utxos = await lucid.wallet.getUtxos()!;
+      if (utxos.length < userNames.length) {
+        toast.error(
+          `User does not have enough UTxOs, must have at least ${userNames.length}`
+        );
+        return;
+      }
+
+      const outRefs = utxos.slice(0, userNames.length);
+      const userAssetNames = outRefs.map((outRef) =>
+        getAssetNameFromOutRef(outRef.txHash, outRef.outputIndex)
       );
-      const userAsset = `${compiledScriptInfo.policyId}${userAssetName}`;
+      const userAssets = userAssetNames.map(
+        (assetName) => `${compiledScriptInfo.policyId}${assetName}`
+      );
 
       const machineAssetName = fromText("user-machine");
       const machineAsset = `${compiledScriptInfo.policyId}${machineAssetName}`;
 
       const redeemer = Data.to(
         new Constr(1, [
-          [
-            new Constr(0, [
-              new Constr(0, [outRef.txHash]),
-              BigInt(outRef.outputIndex),
-            ]),
-          ],
+          outRefs.map(
+            (outRef) =>
+              new Constr(0, [
+                new Constr(0, [outRef.txHash]),
+                BigInt(outRef.outputIndex),
+              ])
+          ),
         ])
       );
-      const datum = Data.to(new Constr(2, [userAssetName]));
+
+      const datums = userAssetNames.map((userAssetName) =>
+        Data.to(new Constr(2, [userAssetName]))
+      );
 
       const parsedCompetitionName =
         competitionName.length > 64
           ? splitStringIntoChunks(competitionName)
           : competitionName;
 
-      const parsedUserName =
-        userName.length > 64 ? splitStringIntoChunks(userName) : userName;
+      const parsedUserNames = userNames.map((name) => {
+        return name.length > 64 ? splitStringIntoChunks(name) : name;
+      });
+
+      const userMetadatas = parsedUserNames.map((parsedUserName) => ({
+        Name: parsedUserName,
+        Image: [
+          "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
+          "a1-b278-29b31a3abab6",
+        ],
+        "Competition Name": parsedCompetitionName,
+      }));
 
       let tx = lucid
         .newTx()
-        .collectFrom([outRef])
+        .collectFrom(outRefs)
         .attachMintingPolicy(compiledScriptInfo.script)
         .attachMetadata(721, {
-          [compiledScriptInfo.policyId]: {
-            [userAssetName]: {
-              Name: parsedUserName,
-              Image: [
-                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
-                "a1-b278-29b31a3abab6",
-              ],
-              "Competition Name": parsedCompetitionName,
-            },
-          },
+          [compiledScriptInfo.policyId]: Object.fromEntries(
+            userAssetNames.map((asset, i) => [asset, userMetadatas[i]])
+          ),
         })
         .mintAssets(
           {
-            [userAsset]: BigInt(1),
-            [machineAsset]: BigInt(1),
+            ...Object.fromEntries(
+              userAssets.map((asset) => [asset, BigInt(1)])
+            ),
+            [machineAsset]: BigInt(userAssets.length),
           },
           redeemer
         )
-        .payToContract(
+        .validFrom(Date.now() - 20 * 60 * 1_000)
+        .validTo(Date.now() + 30 * 60 * 1_000);
+
+      for (const userAssetName of userAssetNames) {
+        tx = tx.payToContract(
           compiledScriptInfo.address,
-          { inline: datum },
+          { inline:  Data.to(new Constr(2, [userAssetName])) },
           {
             lovelace: BigInt(params.userPrice),
             [machineAsset]: BigInt(1),
           }
-        )
-        .validFrom(Date.now() - 20 * 60 * 1_000)
-        .validTo(Date.now() + 30 * 60 * 1_000);
+        );
+      }
 
       const result = await tx.complete();
 
