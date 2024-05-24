@@ -35,6 +35,7 @@ export type WalletContext = {
   getWallets: () => Cardano | null;
   connect: (wallet: string) => Promise<void>;
   backEndGetCompetitions: () => Promise<Competition[]>;
+  backEndGetUsers: (competitionId: string) => Promise<User[]>;
   mintAdmin: (
     competitionName: string,
     competitionDescription: string,
@@ -103,6 +104,14 @@ export type ScriptParams = {
   votePolicyId: PolicyId;
   endDate: number;
   rewardRates: RewardRates;
+};
+
+export type User = {
+  name: string;
+  assetName: string;
+  votes: string[];
+  isApproved: boolean;
+  isRejected: boolean;
 };
 
 const baseAxios = axios.create({
@@ -184,7 +193,7 @@ export const WalletProvider = ({
     try {
       const result = await baseAxios.get("/marketplace/competitions");
       const competitions = result.data.competitions;
-  
+
       return competitions.map((comp: any) => ({
         name: comp.name,
         description: comp.description,
@@ -202,9 +211,9 @@ export const WalletProvider = ({
           rewardRates: JSON.parse(comp.rewardRates),
         },
       }));
-    } catch(error) {
-      console.log(error)
-      return Promise.reject(error)
+    } catch (error) {
+      console.log(error);
+      return Promise.reject(error);
     }
   };
 
@@ -213,26 +222,66 @@ export const WalletProvider = ({
     description: string,
     policyId: string,
     address: string,
+    modAddress: string,
     params: ScriptParams
   ) => {
     try {
-      const result = await baseAxios.post("/marketplace/competitions/create", {
+      await baseAxios.post("/marketplace/competitions/create", {
         name: name,
         description: description,
         policyId: policyId,
         address: address,
+        modAddress: modAddress,
         outRefHash: params.outRef.txHash,
         outRefIndex: params.outRef.outputIndex,
         adminPrice: params.adminPrice,
         userPrice: params.userPrice,
         votePolicyId: params.votePolicyId,
-        endDate: (new Date(params.endDate)).toISOString(),
+        endDate: new Date(params.endDate).toISOString(),
         rewardRates: JSON.stringify(params.rewardRates),
       });
-    } catch(error) {
-      console.log(error)
+    } catch (error) {
+      console.log(error);
     }
-    
+  };
+
+  const backEndGetUsers = async (competitionId: string): Promise<User[]> => {
+    try {
+      const result = await baseAxios.get(
+        `/marketplace/competitions/${competitionId}/users`
+      );
+      const users = result.data.users;
+
+      return users.map((user: any) => ({
+        name: user.name,
+        assetName: user.assetName,
+        votes: JSON.parse(user.votes),
+        isApproved: user.isApproved,
+        isRejected: user.isRejected,
+      }));
+    } catch (error) {
+      console.log(error);
+      return Promise.reject(error);
+    }
+  };
+
+  const backEndSaveUser = async (
+    competitionId: string,
+    name: string,
+    assetName: string
+  ) => {
+    try {
+      await baseAxios.post(
+        `/marketplace/competitions/${competitionId}/users/create`,
+        {
+          name: name,
+          assetName: assetName,
+        }
+      );
+    } catch (error) {
+      console.log(error);
+      return Promise.reject(error);
+    }
   };
 
   const updateCurrentFullWallet = async () => {
@@ -498,6 +547,7 @@ export const WalletProvider = ({
         competitionDescription,
         compiledScriptInfo.policyId,
         compiledScriptInfo.address,
+        modAddress,
         params
       );
 
@@ -616,6 +666,14 @@ export const WalletProvider = ({
 
       const txHash = await txSigned.submit();
 
+      userNames.forEach(async (name, i) => {
+        await backEndSaveUser(
+          compiledScriptInfo.policyId,
+          name,
+          userAssetNames[i]
+        );
+      });
+
       console.log(`Successfully submitted transaction ${txHash}`);
     } catch (error) {
       console.log(error);
@@ -629,6 +687,7 @@ export const WalletProvider = ({
         currentWallet: currentFullWallet,
         getWallets: () => wallets,
         backEndGetCompetitions,
+        backEndGetUsers,
         connect,
         mintAdmin,
         mintUser,
