@@ -237,6 +237,8 @@ export const WalletProvider = ({
     scriptRefIndex: number,
     name: string,
     description: string,
+    adminImage: string,
+    modImage: string,
     policyId: string,
     address: string,
     params: ScriptParams
@@ -247,6 +249,8 @@ export const WalletProvider = ({
         scriptRefIndex: scriptRefIndex,
         name: name,
         description: description,
+        adminImage: adminImage,
+        modImage: modImage,
         policyId: policyId,
         address: address,
         outRefHash: params.outRef.txHash,
@@ -291,6 +295,7 @@ export const WalletProvider = ({
     scriptRefIndex: number,
     competitionId: string,
     name: string,
+    image: string,
     assetName: string
   ) => {
     try {
@@ -299,6 +304,7 @@ export const WalletProvider = ({
         {
           scriptRefHash: scriptRefHash,
           scriptRefIndex: scriptRefIndex,
+          image: image,
           name: name,
           assetName: assetName,
         }
@@ -513,10 +519,12 @@ export const WalletProvider = ({
       const adminName = `${competitionName} - Admin`;
       const parsedAdminName =
         adminName.length > 64 ? splitStringIntoChunks(adminName) : adminName;
+      const adminImage = "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6"
 
       const modName = `${competitionName} - Mod`;
       const parsedModName =
         modName.length > 64 ? splitStringIntoChunks(modName) : modName;
+      const modImage = "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6"
 
       let tx = lucid
         .newTx()
@@ -525,20 +533,14 @@ export const WalletProvider = ({
         .attachMetadata(721, {
           [compiledScriptInfo.policyId]: {
             [adminAssetName]: {
-              Name: parsedAdminName,
-              Image: [
-                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
-                "a1-b278-29b31a3abab6",
-              ],
+              name: parsedAdminName,
+              image: splitStringIntoChunks(adminImage),
               "Competition Name": parsedCompetitionName,
               "Competition Description": parsedCompetitionDescription,
             },
             [modAssetName]: {
-              Name: parsedModName,
-              Image: [
-                "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
-                "a1-b278-29b31a3abab6",
-              ],
+              name: parsedModName,
+              image: splitStringIntoChunks(modImage),
             },
           },
         })
@@ -571,6 +573,8 @@ export const WalletProvider = ({
         0,
         competitionName,
         competitionDescription,
+        adminImage,
+        modImage,
         compiledScriptInfo.policyId,
         compiledScriptInfo.address,
         params
@@ -639,13 +643,11 @@ export const WalletProvider = ({
       const parsedUserNames = userNames.map((name) => {
         return name.length > 64 ? splitStringIntoChunks(name) : name;
       });
+      const images = userNames.map(() => "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6")
 
-      const userMetadatas = parsedUserNames.map((parsedUserName) => ({
-        Name: parsedUserName,
-        Image: [
-          "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45",
-          "a1-b278-29b31a3abab6",
-        ],
+      const userMetadatas = parsedUserNames.map((parsedUserName, i) => ({
+        name: parsedUserName,
+        image: splitStringIntoChunks(images[i]),
         "Competition Name": parsedCompetitionName,
       }));
 
@@ -693,7 +695,8 @@ export const WalletProvider = ({
           i,
           compiledScriptInfo.policyId,
           name,
-          userAssetNames[i]
+          images[i],
+          userAssetNames[i],
         );
       });
 
