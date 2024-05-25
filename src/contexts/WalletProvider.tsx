@@ -46,6 +46,11 @@ export type WalletContext = {
     rewardRates: RewardRates
   ) => Promise<void>;
   mintUser: (competiton: Competition, userNames: string[]) => Promise<void>;
+  reviewUser: (
+    competition: Competition,
+    user: User,
+    approve: boolean
+  ) => Promise<void>;
 };
 
 export interface FullWallet extends WalletApi {
@@ -90,10 +95,13 @@ export type RewardRates = {
 };
 
 export type Competition = {
+  scriptRef: OutRef;
   name: string;
   description: string;
   policyId: string;
   address: string;
+  approvedAssetNames: string[];
+  rejectedAssetNames: string[];
   params: ScriptParams;
 };
 
@@ -107,6 +115,7 @@ export type ScriptParams = {
 };
 
 export type User = {
+  scriptRef: OutRef;
   name: string;
   assetName: string;
   votes: string[];
@@ -195,10 +204,16 @@ export const WalletProvider = ({
       const competitions = result.data.competitions;
 
       return competitions.map((comp: any) => ({
+        scriptRef: {
+          txHash: comp.scriptRefHash,
+          outputIndex: comp.scriptRefIndex,
+        },
         name: comp.name,
         description: comp.description,
         policyId: comp.policyId,
         address: comp.address,
+        approvedAssetNames: comp.approvedAssetNames,
+        rejectedAssetNames: comp.rejectedAssetNames,
         params: {
           outRef: {
             txHash: comp.outRefHash,
@@ -255,6 +270,10 @@ export const WalletProvider = ({
       const users = result.data.users;
 
       return users.map((user: any) => ({
+        scriptRef: {
+          txHash: user.scriptRefHash,
+          outputIndex: user.scriptRefIndex,
+        },
         name: user.name,
         assetName: user.assetName,
         votes: JSON.parse(user.votes),
@@ -282,6 +301,33 @@ export const WalletProvider = ({
           scriptRefIndex: scriptRefIndex,
           name: name,
           assetName: assetName,
+        }
+      );
+    } catch (error) {
+      console.log(error);
+      return Promise.reject(error);
+    }
+  };
+
+  const backEndReviewUser = async (
+    competitionId: string,
+    assetName: string,
+    approve: boolean,
+    newAdminRefHash: string,
+    newAdminRefIndex: number,
+    newUserRefHash: string,
+    newUserRefIndex: number
+  ) => {
+    try {
+      await baseAxios.post(
+        `/marketplace/competitions/${competitionId}/users/${assetName}/review?approve=${
+          approve ? "true" : "false"
+        }`,
+        {
+          newAdminRefHash,
+          newAdminRefIndex,
+          newUserRefHash,
+          newUserRefIndex,
         }
       );
     } catch (error) {
@@ -585,10 +631,6 @@ export const WalletProvider = ({
         ])
       );
 
-      const datums = userAssetNames.map((userAssetName) =>
-        Data.to(new Constr(2, [userAssetName]))
-      );
-
       const parsedCompetitionName =
         competitionName.length > 64
           ? splitStringIntoChunks(competitionName)
@@ -661,6 +703,127 @@ export const WalletProvider = ({
     }
   };
 
+  const reviewUser = async (
+    competition: Competition,
+    user: User,
+    approve: boolean
+  ) => {
+    if (!lucid) {
+      return Promise.reject("Lucid not loaded yet.");
+    }
+
+    const wallet = await getCurrentWallet();
+    if (!wallet) {
+      return Promise.reject("Wallet has not been loaded yet!");
+    }
+
+    lucid.selectWallet(wallet);
+
+    console.log(competition);
+    console.log(user);
+
+    try {
+      const compiledScriptInfo = await compileScript(competition.params);
+
+      const userUTxOs = await lucid.utxosByOutRef([user.scriptRef]);
+      if (userUTxOs.length != 1) {
+        return Promise.reject("User script UTxO not found!");
+      }
+      const userUTxO = userUTxOs[0];
+
+      const adminUTxOs = await lucid.utxosByOutRef([competition.scriptRef]);
+      if (adminUTxOs.length != 1) {
+        return Promise.reject("Admin script UTxO not found!");
+      }
+      const adminUTxO = adminUTxOs[0];
+
+      const modAssetName = fromText("mod");
+      const modAsset = `${compiledScriptInfo.policyId}${modAssetName}`;
+
+      const address = await lucid.wallet.address()!;
+      const owner = lucid.utils.paymentCredentialOf(address).hash!;
+
+      const utxos = await lucid.wallet.getUtxos()!;
+
+      const proofModUTxO = utxos.find((utxo) => modAsset in utxo.assets);
+      if (!proofModUTxO) {
+        return Promise.reject("Script UTxO not found");
+      }
+
+      const approveDatum = Data.to(new Constr(3, [user.assetName, []]));
+      const rejectDatum = Data.to(new Constr(4, [user.assetName]));
+
+      const adminDatum = Data.to(
+        new Constr(
+          0,
+          approve
+            ? [
+                [user.assetName, ...competition.approvedAssetNames],
+                competition.rejectedAssetNames,
+              ]
+            : [
+                competition.approvedAssetNames,
+                [user.assetName, ...competition.rejectedAssetNames],
+              ]
+        )
+      );
+
+      const trueData = new Constr(1, []);
+      const falseData = new Constr(0, []);
+
+      const auth = new Constr(0, [
+        owner,
+        new Constr(0, [
+          new Constr(0, [proofModUTxO.txHash]),
+          BigInt(proofModUTxO.outputIndex),
+        ]),
+      ]);
+
+      const redeemer = Data.to(
+        new Constr(1, [new Constr(0, [auth, approve ? trueData : falseData])])
+      );
+
+      const tx = await lucid
+        .newTx()
+        .collectFrom([adminUTxO], redeemer)
+        .collectFrom([userUTxO], redeemer)
+        .attachSpendingValidator(compiledScriptInfo.script)
+        .readFrom([proofModUTxO])
+        .addSigner(address)
+        .payToContract(
+          compiledScriptInfo.address,
+          { inline: adminDatum },
+          adminUTxO.assets
+        )
+        .payToContract(
+          compiledScriptInfo.address,
+          { inline: approve ? approveDatum : rejectDatum },
+          userUTxO.assets
+        )
+        .validFrom(Date.now() - 20 * 60 * 1_000)
+        .validTo(Date.now() + 30 * 60 * 1_000)
+        .complete();
+
+      const txSigned = await tx.sign().complete();
+
+      const txHash = await txSigned.submit();
+
+      await backEndReviewUser(
+        competition.policyId,
+        user.assetName,
+        approve,
+        txHash,
+        0,
+        txHash,
+        1
+      );
+
+      console.log(`Successfully submitted transaction ${txHash}`);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   return (
     <Wallet.Provider
       value={{
@@ -672,6 +835,7 @@ export const WalletProvider = ({
         connect,
         mintAdmin,
         mintUser,
+        reviewUser,
       }}
     >
       {children}
