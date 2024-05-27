@@ -51,6 +51,7 @@ export type WalletContext = {
     user: User,
     approve: boolean
   ) => Promise<void>;
+  voteUser: (competition: Competition, user: User) => Promise<void>;
 };
 
 export interface FullWallet extends WalletApi {
@@ -342,6 +343,28 @@ export const WalletProvider = ({
     }
   };
 
+  const backEndVoteUser = async (
+    competitionId: string,
+    userAssetName: string,
+    voteAssetName: string,
+    newUserRefHash: string,
+    newUserRefIndex: number
+  ) => {
+    try {
+      await baseAxios.post(
+        `/marketplace/competitions/${competitionId}/users/${userAssetName}/vote`,
+        {
+          voteAssetName,
+          newUserRefHash,
+          newUserRefIndex,
+        }
+      );
+    } catch (error) {
+      console.log(error);
+      return Promise.reject(error);
+    }
+  };
+
   const updateCurrentFullWallet = async () => {
     const currentFullWallet = await getCurrentWallet();
     setCurrentFullWallet(currentFullWallet);
@@ -519,12 +542,14 @@ export const WalletProvider = ({
       const adminName = `${competitionName} - Admin`;
       const parsedAdminName =
         adminName.length > 64 ? splitStringIntoChunks(adminName) : adminName;
-      const adminImage = "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6"
+      const adminImage =
+        "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6";
 
       const modName = `${competitionName} - Mod`;
       const parsedModName =
         modName.length > 64 ? splitStringIntoChunks(modName) : modName;
-      const modImage = "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6"
+      const modImage =
+        "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6";
 
       let tx = lucid
         .newTx()
@@ -643,7 +668,10 @@ export const WalletProvider = ({
       const parsedUserNames = userNames.map((name) => {
         return name.length > 64 ? splitStringIntoChunks(name) : name;
       });
-      const images = userNames.map(() => "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6")
+      const images = userNames.map(
+        () =>
+          "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6"
+      );
 
       const userMetadatas = parsedUserNames.map((parsedUserName, i) => ({
         name: parsedUserName,
@@ -696,7 +724,7 @@ export const WalletProvider = ({
           compiledScriptInfo.policyId,
           name,
           images[i],
-          userAssetNames[i],
+          userAssetNames[i]
         );
       });
 
@@ -721,9 +749,6 @@ export const WalletProvider = ({
     }
 
     lucid.selectWallet(wallet);
-
-    console.log(competition);
-    console.log(user);
 
     try {
       const compiledScriptInfo = await compileScript(competition.params);
@@ -750,7 +775,7 @@ export const WalletProvider = ({
 
       const proofModUTxO = utxos.find((utxo) => modAsset in utxo.assets);
       if (!proofModUTxO) {
-        return Promise.reject("Script UTxO not found");
+        return Promise.reject("Mod asset not found");
       }
 
       const approveDatum = Data.to(new Constr(3, [user.assetName, []]));
@@ -827,6 +852,100 @@ export const WalletProvider = ({
     }
   };
 
+  const voteUser = async (competition: Competition, user: User) => {
+    if (!lucid) {
+      return Promise.reject("Lucid not loaded yet.");
+    }
+
+    const wallet = await getCurrentWallet();
+    if (!wallet) {
+      return Promise.reject("Wallet has not been loaded yet!");
+    }
+
+    lucid.selectWallet(wallet);
+
+    try {
+      const compiledScriptInfo = await compileScript(competition.params);
+
+      const userUTxOs = await lucid.utxosByOutRef([user.scriptRef]);
+      if (userUTxOs.length != 1) {
+        return Promise.reject("User script UTxO not found!");
+      }
+      const userUTxO = userUTxOs[0];
+
+      const address = await lucid.wallet.address()!;
+      const owner = lucid.utils.paymentCredentialOf(address).hash!;
+
+      const utxos = await lucid.wallet.getUtxos()!;
+
+      let voteAsset: string | null = null;
+      let voteAssetName: string | null = null;
+      let proofVoteUTxO: UTxO | null = null;
+      for (const utxo of utxos) {
+        for (const asset of Object.keys(utxo.assets)) {
+          if (asset.includes(competition.params.votePolicyId)) {
+            proofVoteUTxO = utxo;
+            voteAsset = asset;
+            voteAssetName = asset.slice(56);
+            break;
+          }
+        }
+        if (proofVoteUTxO) break;
+      }
+
+      if (!proofVoteUTxO || !voteAsset || !voteAssetName) {
+        return Promise.reject("Vote asset not found");
+      }
+
+      const userDatum = Data.to(
+        new Constr(3, [user.assetName, [voteAssetName, ...user.votes]])
+      );
+
+      const auth = new Constr(0, [
+        owner,
+        new Constr(0, [
+          new Constr(0, [proofVoteUTxO.txHash]),
+          BigInt(proofVoteUTxO.outputIndex),
+        ]),
+      ]);
+
+      const redeemer = Data.to(
+        new Constr(1, [new Constr(1, [auth, voteAssetName])])
+      );
+
+      const tx = await lucid
+        .newTx()
+        .collectFrom([userUTxO], redeemer)
+        .attachSpendingValidator(compiledScriptInfo.script)
+        .readFrom([proofVoteUTxO])
+        .addSigner(address)
+        .payToContract(
+          compiledScriptInfo.address,
+          { inline: userDatum },
+          userUTxO.assets
+        )
+        .validFrom(Date.now() - 20 * 60 * 1_000)
+        .validTo(Date.now() + 30 * 60 * 1_000)
+        .complete();
+
+      const txSigned = await tx.sign().complete();
+
+      const txHash = await txSigned.submit();
+
+      await backEndVoteUser(
+        competition.policyId,
+        user.assetName,
+        voteAssetName,
+        txHash,
+        0
+      );
+
+      console.log(`Successfully submitted transaction ${txHash}`);
+    } catch (error) {
+      console.log(error);
+    }
+  };
+
   return (
     <Wallet.Provider
       value={{
@@ -839,6 +958,7 @@ export const WalletProvider = ({
         mintAdmin,
         mintUser,
         reviewUser,
+        voteUser
       }}
     >
       {children}
