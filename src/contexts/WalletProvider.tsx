@@ -230,6 +230,7 @@ export const WalletProvider = ({
 
       await backend.saveCompetition(api, competitionCreateDatas)
     } catch(error: any) {
+      console.error(error)
       toast.error(error);
     }
   };

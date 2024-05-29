@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 
-import { Button } from "../components/Button";
-import { useWallet, Competition, User } from "../contexts/WalletProvider";
+import { useWallet } from "../contexts/WalletProvider";
 import { Navbar } from "../components/Navbar";
+
+import { Competition, User } from "../types/competition";
 
 const truncateString = (input: string, maxLength: number): string => {
   if (input.length <= maxLength) {
@@ -22,13 +23,8 @@ const ListCompetition = () => {
     [Competition, User[]][] | null
   >(null);
 
-  const {
-    getCompetitions,
-    getUsers,
-    mintUser,
-    reviewUser,
-    voteUser,
-  } = useWallet()!;
+  const { getCompetitions, getUsers, mintUser, reviewUser, voteUser } =
+    useWallet()!;
 
   useEffect(() => {
     loadCompetitions();
@@ -39,11 +35,10 @@ const ListCompetition = () => {
 
     let competitionsNew: [Competition, User[]][] = [];
     for (const comp of compsBE) {
-      const usersNew = await getUsers(comp.policyId);
+      const usersNew = await getUsers(comp.ticketPolicyId);
       competitionsNew.push([comp, usersNew]);
     }
 
-    console.log("competitions", competitionsNew);
     setCompetitions(competitionsNew);
   };
 
@@ -68,28 +63,30 @@ const ListCompetition = () => {
                     </div>
                     <div className="flex flex-row gap-2 justify-between">
                       <span className="font-bold">PolicyId</span>
-                      <span>{truncateString(competition.policyId, 20)}</span>
+                      <span>
+                        {truncateString(competition.ticketPolicyId, 20)}
+                      </span>
                     </div>
                     <div className="flex flex-row gap-2 justify-between">
                       <span className="font-bold">Address</span>
-                      <span>{truncateString(competition.address, 20)}</span>
+                      <span>
+                        {truncateString(competition.adminAddress, 20)}
+                      </span>
                     </div>
                     <div className="flex flex-row gap-2 justify-between">
                       <span className="font-bold">User Price</span>
-                      <span>{competition.params.userPrice}</span>
+                      <span>{competition.userPrice}</span>
                     </div>
                     <div className="flex flex-row gap-2 justify-between">
                       <span className="font-bold">Vote PolicyId</span>
                       <span>
-                        {truncateString(competition.params.votePolicyId, 20)}
+                        {truncateString(competition.votePolicyId, 20)}
                       </span>
                     </div>
                     <div className="flex flex-row gap-2 justify-between">
                       <span className="font-bold">End Date</span>
                       <span>
-                        {new Date(
-                          competition.params.endDate
-                        ).toLocaleDateString()}
+                        {new Date(competition.endDate).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
@@ -134,16 +131,10 @@ const ListCompetition = () => {
                             </div>
                             <div className="flex flex-row gap-2 justify-between">
                               <span className="font-bold">State</span>
-                              <span>
-                                {user.isApproved
-                                  ? "Listed"
-                                  : user.isRejected
-                                  ? "Rejected"
-                                  : "Awaiting Review"}
-                              </span>
+                              <span>{user.state.toLocaleUpperCase()}</span>
                             </div>
                           </div>
-                          {user.isApproved && (
+                          {user.state == "approved" && (
                             <button
                               className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-gray-800 text-white"
                               onClick={() => {
@@ -153,7 +144,7 @@ const ListCompetition = () => {
                               Vote
                             </button>
                           )}
-                          {!user.isApproved && !user.isRejected && (
+                          {user.state == "awaiting" && (
                             <div className="flex flex-row gap-2">
                               <button
                                 className="w-full py-4 text-xl hover:opacity-75 font-bold rounded-lg bg-green-800 text-white"

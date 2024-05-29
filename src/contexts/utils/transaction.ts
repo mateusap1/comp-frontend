@@ -56,10 +56,11 @@ const adminVotesDatum = (
   compiledScriptInfo: CompiledScriptInfo,
   votesNum: number
 ) => {
+  const userHash = lucid.utils.paymentCredentialOf(
+    compiledScriptInfo.userAddress
+  ).hash;
   const userAddress = new Constr(0, [
-    new Constr(1, [
-      lucid.utils.paymentCredentialOf(compiledScriptInfo.userAddress).hash,
-    ]),
+    new Constr(1, [userHash]),
     new Constr(1, []),
   ]);
 
@@ -110,13 +111,17 @@ const paramsToData = (lucid: Lucid, params: TicketParams) => {
     BigInt(params.outRef.outputIndex),
   ]);
 
+  const adminHash = lucid.utils.paymentCredentialOf(params.adminAddress).hash;
+
+  const userHash = lucid.utils.paymentCredentialOf(params.userAddress).hash;
+
   const adminAddress = new Constr(0, [
-    new Constr(1, [lucid.utils.paymentCredentialOf(params.adminAddress).hash]),
+    new Constr(1, [adminHash]),
     new Constr(1, []),
   ]);
 
   const userAddress = new Constr(0, [
-    new Constr(1, [lucid.utils.paymentCredentialOf(params.userAddress).hash]),
+    new Constr(1, [userHash]),
     new Constr(1, []),
   ]);
 
@@ -136,7 +141,7 @@ const paramsToData = (lucid: Lucid, params: TicketParams) => {
     userPrice,
   ]);
 
-  return Data.to(paramsData);
+  return paramsData;
 };
 
 const compileScript = async (
