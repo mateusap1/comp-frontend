@@ -23,8 +23,8 @@ const ListCompetition = () => {
   >(null);
 
   const {
-    backEndGetCompetitions,
-    backEndGetUsers,
+    getCompetitions,
+    getUsers,
     mintUser,
     reviewUser,
     voteUser,
@@ -35,11 +35,11 @@ const ListCompetition = () => {
   }, []);
 
   const loadCompetitions = async () => {
-    const compsBE = await backEndGetCompetitions();
+    const compsBE = await getCompetitions();
 
     let competitionsNew: [Competition, User[]][] = [];
     for (const comp of compsBE) {
-      const usersNew = await backEndGetUsers(comp.policyId);
+      const usersNew = await getUsers(comp.policyId);
       competitionsNew.push([comp, usersNew]);
     }
 

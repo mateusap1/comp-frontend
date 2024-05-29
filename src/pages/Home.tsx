@@ -1,8 +1,6 @@
 import React, { useEffect, useState } from "react";
 
-import { Button } from "../components/Button";
-import { useWallet, NftRole, NftInfo } from "../contexts/WalletProvider";
-import ImageUploader from "../components/ImageUploader";
+import { useWallet } from "../contexts/WalletProvider";
 import { Navbar } from "../components/Navbar";
 
 const formatDate = (date: Date) => {
@@ -41,7 +39,7 @@ const Home = () => {
   const [trdUserRate, setTrdUserRate] = useState<number>(0);
   const [trdVoteRate, setTrdVoteRate] = useState<number>(0);
 
-  const { currentWallet, mintAdmin } = useWallet()!;
+  const { mintAdmin } = useWallet()!;
 
   return (
     <div>
@@ -104,11 +102,11 @@ const Home = () => {
                 type="date"
                 value={endDate}
                 onChange={(e) => {
-                  const date = convertToDate(e.target.value)
-                  console.log(date)
-                  console.log(date.getTime())
+                  const date = convertToDate(e.target.value);
+                  console.log(date);
+                  console.log(date.getTime());
 
-                  setEndDate(e.target.value)
+                  setEndDate(e.target.value);
                 }}
               />
             </div>
@@ -222,11 +220,9 @@ const Home = () => {
                     {
                       admin: adminRate,
                       moderator: moderatorRate,
-                      winners: [
-                        { user: fstUserRate, vote: fstVoteRate },
-                        { user: sndUserRate, vote: sndVoteRate },
-                        { user: trdUserRate, vote: trdVoteRate },
-                      ],
+                      first: { user: fstUserRate, vote: fstVoteRate },
+                      second: { user: sndUserRate, vote: sndVoteRate },
+                      third: { user: trdUserRate, vote: trdVoteRate },
                     }
                   )
                 }
