@@ -595,96 +595,99 @@ export const reviewUser = async (
   ];
 };
 
-// const voteUser = async (competition: Competition, user: User) => {
-//   if (!lucid) {
-//     return Promise.reject("Lucid not loaded yet.");
-//   }
+export const voteUser = async (
+  lucid: Lucid,
+  wallet: FullWallet,
+  competition: Competition,
+  user: User
+): Promise<User> => {
+  lucid.selectWallet(wallet);
 
-//   const wallet = await getCurrentWallet();
-//   if (!wallet) {
-//     return Promise.reject("Wallet has not been loaded yet!");
-//   }
+  const params: TicketParamsShort = {
+    outRef: {
+      txHash: competition.outRefHash,
+      outputIndex: competition.outRefIndex,
+    },
+    ...competition,
+  };
 
-//   lucid.selectWallet(wallet);
+  const compiledScriptInfo = await compileScript(lucid, params);
 
-//   try {
-//     const compiledScriptInfo = await compileScript(competition.params);
+  const userOutRef: OutRef = {
+    txHash: user.scriptRefHash,
+    outputIndex: user.scriptRefIndex,
+  };
 
-//     const userUTxOs = await lucid.utxosByOutRef([user.scriptRef]);
-//     if (userUTxOs.length != 1) {
-//       return Promise.reject("User script UTxO not found!");
-//     }
-//     const userUTxO = userUTxOs[0];
+  const userUTxOs = await lucid.utxosByOutRef([userOutRef]);
+  if (userUTxOs.length != 1) {
+    return Promise.reject("User script UTxO not found!");
+  }
+  const userUTxO = userUTxOs[0];
 
-//     const address = await lucid.wallet.address()!;
-//     const owner = lucid.utils.paymentCredentialOf(address).hash!;
+  const address = await lucid.wallet.address()!;
+  const owner = lucid.utils.paymentCredentialOf(address).hash!;
 
-//     const utxos = await lucid.wallet.getUtxos()!;
+  const utxos = await lucid.wallet.getUtxos()!;
 
-//     let voteAsset: string | null = null;
-//     let voteAssetName: string | null = null;
-//     let proofVoteUTxO: UTxO | null = null;
-//     for (const utxo of utxos) {
-//       for (const asset of Object.keys(utxo.assets)) {
-//         if (asset.includes(competition.params.votePolicyId)) {
-//           proofVoteUTxO = utxo;
-//           voteAsset = asset;
-//           voteAssetName = asset.slice(56);
-//           break;
-//         }
-//       }
-//       if (proofVoteUTxO) break;
-//     }
+  let voteAsset: string | null = null;
+  let voteAssetName: string | null = null;
+  let proofVoteUTxO: UTxO | null = null;
+  for (const utxo of utxos) {
+    for (const asset of Object.keys(utxo.assets)) {
+      if (asset.includes(competition.votePolicyId)) {
+        proofVoteUTxO = utxo;
+        voteAsset = asset;
+        voteAssetName = asset.slice(56);
+        break;
+      }
+    }
+    if (proofVoteUTxO) break;
+  }
 
-//     if (!proofVoteUTxO || !voteAsset || !voteAssetName) {
-//       return Promise.reject("Vote asset not found");
-//     }
+  if (!proofVoteUTxO || !voteAsset || !voteAssetName) {
+    return Promise.reject("Vote asset not found");
+  }
 
-//     const userDatum = Data.to(
-//       new Constr(3, [user.assetName, [voteAssetName, ...user.votes]])
-//     );
+  const usrDatum = userDatum(lucid, competition, "approved", user.assetName, [
+    voteAssetName,
+    ...user.votes,
+  ]);
 
-//     const auth = new Constr(0, [
-//       owner,
-//       new Constr(0, [
-//         new Constr(0, [proofVoteUTxO.txHash]),
-//         BigInt(proofVoteUTxO.outputIndex),
-//       ]),
-//     ]);
+  const auth = new Constr(0, [
+    owner,
+    new Constr(0, [
+      new Constr(0, [proofVoteUTxO.txHash]),
+      BigInt(proofVoteUTxO.outputIndex),
+    ]),
+  ]);
 
-//     const redeemer = Data.to(
-//       new Constr(1, [new Constr(1, [auth, voteAssetName])])
-//     );
+  const usrRedeemer = Data.to(new Constr(1, [auth, voteAssetName]));
 
-//     const tx = await lucid
-//       .newTx()
-//       .collectFrom([userUTxO], redeemer)
-//       .attachSpendingValidator(compiledScriptInfo.script)
-//       .readFrom([proofVoteUTxO])
-//       .addSigner(address)
-//       .payToContract(
-//         compiledScriptInfo.address,
-//         { inline: userDatum },
-//         userUTxO.assets
-//       )
-//       .validFrom(Date.now() - 20 * 60 * 1_000)
-//       .validTo(Date.now() + 30 * 60 * 1_000)
-//       .complete();
+  const tx = await lucid
+    .newTx()
+    .collectFrom([userUTxO], usrRedeemer)
+    .attachSpendingValidator(compiledScriptInfo.userScript)
+    .readFrom([proofVoteUTxO])
+    .addSigner(address)
+    .payToContract(
+      compiledScriptInfo.userAddress,
+      { inline: usrDatum },
+      userUTxO.assets
+    )
+    .validFrom(Date.now() - 20 * 60 * 1_000)
+    .validTo(Date.now() + 30 * 60 * 1_000)
+    .complete();
 
-//     const txSigned = await tx.sign().complete();
+  const txSigned = await tx.sign().complete();
 
-//     const txHash = await txSigned.submit();
+  const txHash = await txSigned.submit();
 
-//     await backEndVoteUser(
-//       competition.policyId,
-//       user.assetName,
-//       voteAssetName,
-//       txHash,
-//       0
-//     );
+  console.log(`Successfully submitted transaction ${txHash}`);
 
-//     console.log(`Successfully submitted transaction ${txHash}`);
-//   } catch (error) {
-//     console.log(error);
-//   }
-// };
+  return {
+    ...user,
+    votes: [voteAssetName, ...user.votes],
+    scriptRefHash: txHash,
+    scriptRefIndex: 0,
+  };
+};

@@ -307,7 +307,37 @@ export const WalletProvider = ({
     }
   };
 
-  const voteUser = async (competition: Competition, user: User) => {};
+  const voteUser = async (competition: Competition, user: User) => {
+    if (!lucid) {
+      return Promise.reject("Lucid not loaded yet.");
+    }
+
+    const wallet = await getCurrentWallet();
+    if (!wallet) {
+      return Promise.reject("Wallet has not been loaded yet!");
+    }
+
+    try {
+      const newUser = await transaction.voteUser(
+        lucid,
+        wallet,
+        competition,
+        user
+      );
+
+      await backend.voteUser(
+        api,
+        competition.ticketPolicyId,
+        newUser.assetName,
+        newUser.votes.at(0)!,
+        newUser.scriptRefHash,
+        newUser.scriptRefIndex
+      );
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error);
+    }
+  };
 
   return (
     <Wallet.Provider
