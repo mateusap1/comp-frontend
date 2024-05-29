@@ -56,11 +56,12 @@ export type CompetitionRaw = Competition & {
 
 export type UserShort = {
   name: string;
-  assetName: string;
   image: string;
 };
 
 export type UserCreate = UserShort & {
+  assetName: string;
+
   scriptRefHash: string;
   scriptRefIndex: number;
 };

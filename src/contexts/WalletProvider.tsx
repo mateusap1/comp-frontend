@@ -221,21 +221,52 @@ export const WalletProvider = ({
     };
 
     try {
-      const competitionCreateDatas = await transaction.mintAdmin(
+      const competitionCreateData = await transaction.mintAdmin(
         lucid,
         wallet,
         competition,
         modAddress
       );
 
-      await backend.saveCompetition(api, competitionCreateDatas)
-    } catch(error: any) {
-      console.error(error)
+      await backend.saveCompetition(api, competitionCreateData);
+    } catch (error: any) {
+      console.error(error);
       toast.error(error);
     }
   };
 
-  const mintUser = async (competition: Competition, userNames: string[]) => {};
+  const mintUser = async (competition: Competition, userNames: string[]) => {
+    if (!lucid) {
+      return Promise.reject("Lucid not loaded yet.");
+    }
+
+    const wallet = await getCurrentWallet();
+    if (!wallet) {
+      return Promise.reject("Wallet has not been loaded yet!");
+    }
+
+    const image =
+      "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6";
+
+    try {
+      const userCreateDatas = await transaction.mintUser(
+        lucid,
+        wallet,
+        competition,
+        userNames.map((name) => ({
+          name: name,
+          image: image,
+        }))
+      );
+
+      for (const userCreateData of userCreateDatas) {
+        await backend.saveUser(api, competition.ticketPolicyId, userCreateData);
+      }
+    } catch (error: any) {
+      console.error(error);
+      toast.error(error);
+    }
+  };
 
   const reviewUser = async (
     competition: Competition,

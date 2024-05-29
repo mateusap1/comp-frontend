@@ -15,6 +15,7 @@ import blueprint from "../../assets/plutus.json";
 import {
   CompetitionShort,
   CompetitionCreate,
+  Competition,
   UserShort,
   UserCreate,
 } from "../../types/competition.ts";
@@ -39,7 +40,11 @@ const getAssetNameFromOutRef = (txHash: string, index: number) => {
   return Buffer.from(result).toString("hex");
 };
 
-const splitStringIntoChunks = (input: string): string[] => {
+const splitStringIntoChunks = (input: string): string[] | string => {
+  if (input.length <= 64) {
+    return input;
+  }
+
   const chunkSize = 64;
   const chunks: string[] = [];
 
@@ -48,6 +53,47 @@ const splitStringIntoChunks = (input: string): string[] => {
   }
 
   return chunks;
+};
+
+const userDatum = (
+  lucid: Lucid,
+  competition: Competition,
+  userState: "awaiting" | "approved" | "rejected",
+  userAssetName: string,
+  userVotes: string[]
+) => {
+  const adminHash = lucid.utils.paymentCredentialOf(
+    competition.adminAddress
+  ).hash;
+  const adminAddress = new Constr(0, [
+    new Constr(1, [adminHash]),
+    new Constr(1, []),
+  ]);
+
+  const state = new Constr(
+    userState == "rejected" ? 0 : userState == "approved" ? 1 : 2,
+    []
+  );
+
+  const assetName = userAssetName;
+  const ticketPolicyId = competition.ticketPolicyId;
+  const votePolicyId = competition.votePolicyId;
+
+  const endDate = BigInt(competition.endDate);
+
+  const votes = userVotes;
+
+  const datum = new Constr(0, [
+    adminAddress,
+    state,
+    assetName,
+    ticketPolicyId,
+    votePolicyId,
+    endDate,
+    votes,
+  ]);
+
+  return Data.to(datum);
 };
 
 const adminVotesDatum = (
@@ -250,22 +296,16 @@ export const mintAdmin = async (
   const redeemer = Data.to(new Constr(0, []));
   const adminDatum = adminVotesDatum(lucid, competition, compiledScriptInfo, 0);
 
-  const parsedCompetitionName =
-    competition.name.length > 64
-      ? splitStringIntoChunks(competition.name)
-      : competition.name;
-  const parsedCompetitionDescription =
-    competition.description.length > 64
-      ? splitStringIntoChunks(competition.description)
-      : competition.description;
+  const parsedCompetitionName = splitStringIntoChunks(competition.name);
+  const parsedCompetitionDescription = splitStringIntoChunks(
+    competition.description
+  );
 
   const adminName = `${competition.name} - Admin`;
-  const parsedAdminName =
-    adminName.length > 64 ? splitStringIntoChunks(adminName) : adminName;
+  const parsedAdminName = splitStringIntoChunks(adminName);
 
   const modName = `${competition.name} - Mod`;
-  const parsedModName =
-    modName.length > 64 ? splitStringIntoChunks(modName) : modName;
+  const parsedModName = splitStringIntoChunks(modName);
 
   let tx = lucid
     .newTx()
@@ -323,126 +363,108 @@ export const mintAdmin = async (
   };
 };
 
-// const mintUser = async (
-//   { params, name: competitionName, address: test_address }: Competition,
-//   userNames: string[]
-// ) => {
-//   if (!lucid) {
-//     return Promise.reject("Lucid not loaded yet.");
-//   }
+export const mintUser = async (
+  lucid: Lucid,
+  wallet: FullWallet,
+  competition: Competition,
+  users: UserShort[]
+): Promise<UserCreate[]> => {
+  lucid.selectWallet(wallet);
 
-//   const wallet = await getCurrentWallet();
-//   if (!wallet) {
-//     return Promise.reject("Wallet has not been loaded yet!");
-//   }
+  const params: TicketParamsShort = {
+    outRef: {
+      txHash: competition.outRefHash,
+      outputIndex: competition.outRefIndex,
+    },
+    ...competition,
+  };
 
-//   lucid.selectWallet(wallet);
+  const compiledScriptInfo = await compileScript(lucid, params);
 
-//   try {
-//     const compiledScriptInfo = await compileScript(params);
+  const utxos = await lucid.wallet.getUtxos()!;
+  if (utxos.length < users.length) {
+    return Promise.reject(
+      `User does not have enough UTxOs, must have at least ${users.length}`
+    );
+  }
 
-//     const utxos = await lucid.wallet.getUtxos()!;
-//     if (utxos.length < userNames.length) {
-//       toast.error(
-//         `User does not have enough UTxOs, must have at least ${userNames.length}`
-//       );
-//       return;
-//     }
+  const outRefs = utxos.slice(0, users.length);
+  const userAssetNames = outRefs.map((outRef) =>
+    getAssetNameFromOutRef(outRef.txHash, outRef.outputIndex)
+  );
+  const userAssets = userAssetNames.map(
+    (assetName) => `${compiledScriptInfo.ticketPolicyId}${assetName}`
+  );
 
-//     const outRefs = utxos.slice(0, userNames.length);
-//     const userAssetNames = outRefs.map((outRef) =>
-//       getAssetNameFromOutRef(outRef.txHash, outRef.outputIndex)
-//     );
-//     const userAssets = userAssetNames.map(
-//       (assetName) => `${compiledScriptInfo.policyId}${assetName}`
-//     );
+  const machineAssetName = fromText("user-machine");
+  const machineAsset = `${compiledScriptInfo.ticketPolicyId}${machineAssetName}`;
 
-//     const machineAssetName = fromText("user-machine");
-//     const machineAsset = `${compiledScriptInfo.policyId}${machineAssetName}`;
+  const redeemer = Data.to(
+    new Constr(1, [
+      outRefs.map(
+        (outRef) =>
+          new Constr(0, [
+            new Constr(0, [outRef.txHash]),
+            BigInt(outRef.outputIndex),
+          ])
+      ),
+    ])
+  );
 
-//     const redeemer = Data.to(
-//       new Constr(1, [
-//         outRefs.map(
-//           (outRef) =>
-//             new Constr(0, [
-//               new Constr(0, [outRef.txHash]),
-//               BigInt(outRef.outputIndex),
-//             ])
-//         ),
-//       ])
-//     );
+  const names = users.map(({ name }) => name);
+  const images = users.map(({ image }) => image);
 
-//     const parsedCompetitionName =
-//       competitionName.length > 64
-//         ? splitStringIntoChunks(competitionName)
-//         : competitionName;
+  const userMetadatas = names.map((name, i) => ({
+    name: splitStringIntoChunks(name),
+    image: splitStringIntoChunks(images[i]),
+    "Competition Name": splitStringIntoChunks(competition.name),
+  }));
 
-//     const parsedUserNames = userNames.map((name) => {
-//       return name.length > 64 ? splitStringIntoChunks(name) : name;
-//     });
-//     const images = userNames.map(
-//       () =>
-//         "https://storage.googleapis.com/jpeg-optim-files/d911ee3a-80c2-45a1-b278-29b31a3abab6"
-//     );
+  let tx = lucid
+    .newTx()
+    .collectFrom(outRefs)
+    .attachMintingPolicy(compiledScriptInfo.ticketScript)
+    .attachMetadata(721, {
+      [compiledScriptInfo.ticketPolicyId]: Object.fromEntries(
+        userAssetNames.map((asset, i) => [asset, userMetadatas[i]])
+      ),
+    })
+    .mintAssets(
+      {
+        ...Object.fromEntries(userAssets.map((asset) => [asset, BigInt(1)])),
+        [machineAsset]: BigInt(userAssets.length),
+      },
+      redeemer
+    )
+    .validFrom(Date.now() - 20 * 60 * 1_000)
+    .validTo(Date.now() + 30 * 60 * 1_000);
 
-//     const userMetadatas = parsedUserNames.map((parsedUserName, i) => ({
-//       name: parsedUserName,
-//       image: splitStringIntoChunks(images[i]),
-//       "Competition Name": parsedCompetitionName,
-//     }));
+  for (const userAssetName of userAssetNames) {
+    tx = tx.payToContract(
+      compiledScriptInfo.userAddress,
+      { inline: userDatum(lucid, competition, "awaiting", userAssetName, []) },
+      {
+        lovelace: BigInt(params.userPrice),
+        [machineAsset]: BigInt(1),
+      }
+    );
+  }
 
-//     let tx = lucid
-//       .newTx()
-//       .collectFrom(outRefs)
-//       .attachMintingPolicy(compiledScriptInfo.script)
-//       .attachMetadata(721, {
-//         [compiledScriptInfo.policyId]: Object.fromEntries(
-//           userAssetNames.map((asset, i) => [asset, userMetadatas[i]])
-//         ),
-//       })
-//       .mintAssets(
-//         {
-//           ...Object.fromEntries(userAssets.map((asset) => [asset, BigInt(1)])),
-//           [machineAsset]: BigInt(userAssets.length),
-//         },
-//         redeemer
-//       )
-//       .validFrom(Date.now() - 20 * 60 * 1_000)
-//       .validTo(Date.now() + 30 * 60 * 1_000);
+  const result = await tx.complete();
 
-//     for (const userAssetName of userAssetNames) {
-//       tx = tx.payToContract(
-//         compiledScriptInfo.address,
-//         { inline: Data.to(new Constr(2, [userAssetName])) },
-//         {
-//           lovelace: BigInt(params.userPrice),
-//           [machineAsset]: BigInt(1),
-//         }
-//       );
-//     }
+  const txSigned = await result.sign().complete();
 
-//     const result = await tx.complete();
+  const txHash = await txSigned.submit();
 
-//     const txSigned = await result.sign().complete();
+  console.log(`Successfully submitted transaction ${txHash}`);
 
-//     const txHash = await txSigned.submit();
-
-//     userNames.forEach(async (name, i) => {
-//       await backEndSaveUser(
-//         txHash,
-//         i,
-//         compiledScriptInfo.policyId,
-//         name,
-//         images[i],
-//         userAssetNames[i]
-//       );
-//     });
-
-//     console.log(`Successfully submitted transaction ${txHash}`);
-//   } catch (error) {
-//     console.log(error);
-//   }
-// };
+  return users.map((user, i) => ({
+    ...user,
+    assetName: userAssetNames[i],
+    scriptRefHash: outRefs[i].txHash,
+    scriptRefIndex: outRefs[i].outputIndex,
+  }));
+};
 
 // const reviewUser = async (
 //   competition: Competition,
